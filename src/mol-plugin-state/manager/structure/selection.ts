@@ -22,6 +22,7 @@ import { PluginStateObject as PSO } from '../../objects';
 import { UUID } from '../../../mol-util';
 import { StructureRef } from './hierarchy-state';
 import { Boundary } from '../../../mol-math/geometry/boundary';
+import {Color} from '../../../mol-util/color';
 
 interface StructureSelectionManagerState {
     entries: Map<string, SelectionEntry>,
@@ -436,10 +437,10 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
             .map(s => s.cell.obj!.data);
     }
 
-    private triggerInteraction(modifier: StructureSelectionModifier, loci: Loci, applyGranularity = true) {
+    private triggerInteraction(modifier: StructureSelectionModifier, loci: Loci, applyGranularity = true, color?: Color) {
         switch (modifier) {
             case 'add':
-                this.plugin.managers.interactivity.lociSelects.select({ loci }, applyGranularity);
+                this.plugin.managers.interactivity.lociSelects.select({ loci }, applyGranularity, color);
                 break;
             case 'remove':
                 this.plugin.managers.interactivity.lociSelects.deselect({ loci }, applyGranularity);
@@ -453,8 +454,8 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
         }
     }
 
-    fromLoci(modifier: StructureSelectionModifier, loci: Loci, applyGranularity = true) {
-        this.triggerInteraction(modifier, loci, applyGranularity);
+    fromLoci(modifier: StructureSelectionModifier, loci: Loci, applyGranularity = true, color?: Color) {
+        this.triggerInteraction(modifier, loci, applyGranularity, color);
     }
 
     fromCompiledQuery(modifier: StructureSelectionModifier, query: StructureQuery, applyGranularity = true) {

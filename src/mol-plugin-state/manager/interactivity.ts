@@ -16,6 +16,7 @@ import { ParamDefinition as PD } from '../../mol-util/param-definition';
 import { StatefulPluginComponent } from '../component';
 import { StructureSelectionManager } from './structure/selection';
 import { Vec2, Vec3 } from '../../mol-math/linear-algebra';
+import {Color} from '../../mol-util/color';
 
 export { InteractivityManager };
 
@@ -74,7 +75,7 @@ namespace InteractivityManager {
     export interface DragEvent { current: Representation.Loci, buttons: ButtonsType, button: ButtonsType.Flag, modifiers: ModifiersKeys, pageStart: Vec2, pageEnd: Vec2 }
     export interface ClickEvent { current: Representation.Loci, buttons: ButtonsType, button: ButtonsType.Flag, modifiers: ModifiersKeys, page?: Vec2, position?: Vec3 }
 
-    export type LociMarkProvider = (loci: Representation.Loci, action: MarkerAction) => void
+    export type LociMarkProvider = (loci: Representation.Loci, action: MarkerAction, color?: Color) => void
 
     export abstract class LociMarkManager {
         protected providers: LociMarkProvider[] = [];
@@ -101,9 +102,16 @@ namespace InteractivityManager {
             return { loci: Loci.normalize(loci, granularity), repr };
         }
 
-        protected mark(current: Representation.Loci, action: MarkerAction) {
+        protected mark(current: Representation.Loci, action: MarkerAction, color?: Color, onlySequence = false) {
             if (!Loci.isEmpty(current.loci)) {
-                for (let p of this.providers) p(current, action);
+                for (let i = 0; i < this.providers.length; i++) {
+                    // TODO come up with a better plan
+                    // Passing representation layer to avoid painting canvas
+                    if( !onlySequence || (onlySequence && i !== 0)) {
+                        let p = this.providers[i];
+                        p(current, action, color);
+                    }
+                }
             }
         }
 
@@ -191,12 +199,12 @@ namespace InteractivityManager {
             }
         }
 
-        select(current: Representation.Loci, applyGranularity = true) {
+        select(current: Representation.Loci, applyGranularity = true, color?: Color, onlySequence?: boolean) {
             const normalized = this.normalizedLoci(current, applyGranularity);
             if (StructureElement.Loci.is(normalized.loci)) {
                 this.sel.modify('add', normalized.loci);
             }
-            this.mark(normalized, MarkerAction.Select);
+            this.mark(normalized, MarkerAction.Select, color, onlySequence);
         }
 
         selectJoin(current: Representation.Loci, applyGranularity = true) {
@@ -234,15 +242,15 @@ namespace InteractivityManager {
             if (isEmptyLoci(current.loci)) this.deselectAll();
         }
 
-        protected mark(current: Representation.Loci, action: MarkerAction.Select | MarkerAction.Deselect) {
+        protected mark(current: Representation.Loci, action: MarkerAction.Select | MarkerAction.Deselect, color?: Color, onlySequence?: boolean) {
             const { loci } = current;
             if (!Loci.isEmpty(loci)) {
                 if (StructureElement.Loci.is(loci)) {
                     // do a full deselect/select for the current structure so visuals that are
                     // marked with granularity unequal to 'element' and join/intersect operations
                     // are handled properly
-                    super.mark({ loci: Structure.Loci(loci.structure) }, MarkerAction.Deselect);
-                    super.mark({ loci: this.sel.getLoci(loci.structure) }, MarkerAction.Select);
+                    if (!onlySequence) super.mark({ loci: Structure.Loci(loci.structure) }, MarkerAction.Deselect);
+                    super.mark({ loci: this.sel.getLoci(loci.structure) }, MarkerAction.Select, color, onlySequence);
                 } else {
                     super.mark(current, action);
                 }

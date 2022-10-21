@@ -20,7 +20,7 @@ import { State, StateSelection } from '../mol-state';
 import { ChainSequenceWrapper } from './sequence/chain';
 import { ElementSequenceWrapper } from './sequence/element';
 import { elementLabel } from '../mol-theme/label';
-import { Icon, HelpOutlineSvg } from './controls/icons';
+import {Icon, HelpOutlineSvg, ArrowDownwardSvg} from './controls/icons';
 import { StructureSelectionManager } from '../mol-plugin-state/manager/structure/selection';
 import { arrayEqual } from '../mol-util/array';
 
@@ -350,6 +350,7 @@ export class SequenceView extends PluginUIComponent<{ defaultMode?: SequenceView
                 <div className='msp-sequence-select'>
                     <Icon svg={HelpOutlineSvg} style={{ cursor: 'help', position: 'absolute', right: 0, top: 0 }}
                         title='Shows a sequence of one or more chains. Use the controls to alter selection.' />
+                    <Icon svg={ArrowDownwardSvg} style={{ cursor: 'pointer', position: 'absolute', right: 24, top: 0 }}/>
 
                     <span>Sequence</span><span style={{ fontWeight: 'normal' }}>No structure available</span>
                 </div>
@@ -364,6 +365,7 @@ export class SequenceView extends PluginUIComponent<{ defaultMode?: SequenceView
             <div className='msp-sequence-select'>
                 <Icon svg={HelpOutlineSvg} style={{ cursor: 'help', position: 'absolute', right: 0, top: 0 }}
                     title='This shows a single sequence. Use the controls to show a different sequence.' />
+                <Icon svg={ArrowDownwardSvg} style={{ cursor: 'pointer', position: 'absolute', right: 24, top: 0 }}/>
 
                 <span>Sequence of</span>
                 <PureSelectControl title={`[Structure] ${PD.optionLabel(params.structure, values.structure)}`} param={params.structure} name='structure' value={values.structure} onChange={this.setParamProps} />

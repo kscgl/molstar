@@ -11,7 +11,15 @@ import { PluginConfig } from '../mol-plugin/config';
 import { ParamDefinition as PD } from '../mol-util/param-definition';
 import { PluginUIComponent } from './base';
 import { ControlGroup, IconButton } from './controls/common';
-import { AutorenewSvg, BuildOutlinedSvg, CameraOutlinedSvg, CloseSvg, FullscreenSvg, TuneSvg } from './controls/icons';
+import {
+    AutorenewSvg,
+    BuildOutlinedSvg,
+    CameraOutlinedSvg,
+    CloseSvg,
+    FullscreenSvg,
+    RefreshSvg,
+    TuneSvg
+} from './controls/icons';
 import { ToggleSelectionModeButton } from './structure/selection';
 import { ViewportCanvas } from './viewport/canvas';
 import { DownloadScreenshotControls } from './viewport/screenshot';
@@ -19,7 +27,8 @@ import { SimpleSettingsControl } from './viewport/simple-settings';
 
 interface ViewportControlsState {
     isSettingsExpanded: boolean,
-    isScreenshotExpanded: boolean
+    isScreenshotExpanded: boolean,
+    isSpinningActivated: boolean
 }
 
 interface ViewportControlsProps {
@@ -28,7 +37,8 @@ interface ViewportControlsProps {
 export class ViewportControls extends PluginUIComponent<ViewportControlsProps, ViewportControlsState> {
     private allCollapsedState: ViewportControlsState = {
         isSettingsExpanded: false,
-        isScreenshotExpanded: false
+        isScreenshotExpanded: false,
+        isSpinningActivated: false
     };
 
     state = { ...this.allCollapsedState } as ViewportControlsState;
@@ -53,6 +63,18 @@ export class ViewportControls extends PluginUIComponent<ViewportControlsProps, V
 
     toggleExpanded = () => {
         PluginCommands.Layout.Update(this.plugin, { state: { isExpanded: !this.plugin.layout.state.isExpanded } });
+    }
+
+    toggleSpinning = () => {
+        if (!this.plugin.canvas3d) return;
+
+        PluginCommands.Canvas3D.SetSettings(this.plugin, {
+            settings: props => {
+                props.trackball.spin = !props.trackball.spin;
+            }
+        });
+        this.setState({isSpinningActivated: !this.state.isSpinningActivated});
+        if (!this.plugin.canvas3d.props.trackball.spin) PluginCommands.Camera.Reset(this.plugin, {});
     }
 
     setSettings = (p: { param: PD.Base<any>, name: string, value: any }) => {
@@ -86,7 +108,11 @@ export class ViewportControls extends PluginUIComponent<ViewportControlsProps, V
             <div className='msp-viewport-controls-buttons'>
                 <div>
                     <div className='msp-semi-transparent-background' />
-                    {this.icon(AutorenewSvg, this.resetCamera, 'Reset Camera')}
+                    {this.icon(RefreshSvg, this.resetCamera, 'Reset Camera')}
+                </div>
+                <div>
+                    <div className='msp-semi-transparent-background' />
+                    {this.icon(AutorenewSvg, this.toggleSpinning, 'Toggle Spin', this.state.isSpinningActivated)}
                 </div>
                 <div>
                     <div className='msp-semi-transparent-background' />
@@ -96,6 +122,7 @@ export class ViewportControls extends PluginUIComponent<ViewportControlsProps, V
                     <div className='msp-semi-transparent-background' />
                     {this.plugin.config.get(PluginConfig.Viewport.ShowControls) && this.icon(BuildOutlinedSvg, this.toggleControls, 'Toggle Controls Panel', this.plugin.layout.state.showControls)}
                     {this.plugin.config.get(PluginConfig.Viewport.ShowExpand) && this.icon(FullscreenSvg, this.toggleExpanded, 'Toggle Expanded Viewport', this.plugin.layout.state.isExpanded)}
+                    {this.plugin.config.get(PluginConfig.Viewport.ShowExpand) && this.icon(AutorenewSvg, this.toggleSpinning, 'Toggle Spin', this.plugin.layout.state.isSpinning)}
                     {this.plugin.config.get(PluginConfig.Viewport.ShowSettings) && this.icon(TuneSvg, this.toggleSettingsExpanded, 'Settings / Controls Info', this.state.isSettingsExpanded)}
                 </div>
                 {this.plugin.config.get(PluginConfig.Viewport.ShowSelectionMode) && <div>

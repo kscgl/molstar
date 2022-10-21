@@ -29,7 +29,7 @@
 }
 
 .msp-layout-expanded {
-    position: fixed;
+    /*position: fixed;*/
 
     @media (orientation:landscape) {
         @import 'layout/controls-landscape';

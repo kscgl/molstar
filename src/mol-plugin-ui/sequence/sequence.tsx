@@ -15,6 +15,7 @@ import { Subject } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
 import { OrderedSet } from '../../mol-data/int';
 import { Representation } from '../../mol-repr/representation';
+import {Color} from '../../mol-util/color';
 
 type SequenceProps = {
     sequenceWrapper: SequenceWrapper.Any,
@@ -31,14 +32,14 @@ export class Sequence<P extends SequenceProps> extends PluginUIComponent<P> {
     private lastMouseOverSeqIdx = -1;
     private highlightQueue = new Subject<{ seqIdx: number, buttons: number, button: number, modifiers: ModifiersKeys }>();
 
-    private lociHighlightProvider = (loci: Representation.Loci, action: MarkerAction) => {
+    private lociHighlightProvider = (loci: Representation.Loci, action: MarkerAction, color?: Color) => {
         const changed = this.props.sequenceWrapper.markResidue(loci.loci, action);
-        if (changed) this.updateMarker();
+        if (changed) this.updateMarker(color);
     }
 
-    private lociSelectionProvider = (loci: Representation.Loci, action: MarkerAction) => {
+    private lociSelectionProvider = (loci: Representation.Loci, action: MarkerAction, color?: Color) => {
         const changed = this.props.sequenceWrapper.markResidue(loci.loci, action);
-        if (changed) this.updateMarker();
+        if (changed) this.updateMarker(color);
     }
 
     private get sequenceNumberPeriod() {
@@ -150,10 +151,10 @@ export class Sequence<P extends SequenceProps> extends PluginUIComponent<P> {
         this.mouseDownLoci = undefined;
     }
 
-    private getBackgroundColor(marker: number) {
+    private getBackgroundColor(marker: number, color?: string | null) {
         // TODO: make marker color configurable
         if (typeof marker === 'undefined') console.error('unexpected marker value');
-        return marker === 0 ? '' : marker % 2 === 0 ? 'rgb(51, 255, 25)' /* selected */ : 'rgb(255, 102, 153)' /* highlighted */;
+        return marker === 0 ? '' : marker % 2 === 0 ? color || 'rgb(51, 255, 25)' /* selected */ : 'rgb(255, 102, 153)' /* highlighted */;
     }
 
     private getResidueClass(seqIdx: number, label: string) {
@@ -203,7 +204,7 @@ export class Sequence<P extends SequenceProps> extends PluginUIComponent<P> {
         return <span key={`marker-${seqIdx}`} className={this.getSequenceNumberClass(seqIdx, seqNum, label)}>{this.padSeqNum(seqNum)}</span>;
     }
 
-    private updateMarker() {
+    private updateMarker(color?: Color) {
         if (!this.parentDiv.current) return;
         const xs = this.parentDiv.current.children;
         const { markerArray } = this.props.sequenceWrapper;
@@ -223,8 +224,17 @@ export class Sequence<P extends SequenceProps> extends PluginUIComponent<P> {
             //     first = span;
             // }
 
-            const backgroundColor = this.getBackgroundColor(markerArray[i]);
+            const spanColor = span.getAttribute('color');
+            const userDefinedColor = spanColor ? spanColor : color === 0 || color ? Color.toStyle(color) : null;
+            const backgroundColor = this.getBackgroundColor(markerArray[i], userDefinedColor);
             if (span.style.backgroundColor !== backgroundColor) span.style.backgroundColor = backgroundColor;
+
+            // Keep the color user selected to use after highlight
+            if(backgroundColor === '') {
+                span.removeAttribute('color');
+            } else if (color && !spanColor) {
+                span.setAttribute('color', Color.toStyle(color));
+            }
         }
 
         // if (first) {

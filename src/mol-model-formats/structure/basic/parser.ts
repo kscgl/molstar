@@ -55,8 +55,15 @@ function createStandardModel(data: BasicData, atom_site: AtomSite, sourceIndex: 
     const sequence = getSequence(data, entities, atomic.hierarchy, coarse.hierarchy);
     const atomicRanges = getAtomicRanges(atomic.hierarchy, entities, atomic.conformation, sequence);
 
-    const entry = data.entry.id.valueKind(0) === Column.ValueKind.Present
+    let entry = data.entry.id.valueKind(0) === Column.ValueKind.Present
         ? data.entry.id.value(0) : format.name;
+
+    if (entry.includes('http')) {
+        const urlRegex = /[^/]*$/.exec(entry);
+        if (urlRegex) {
+            entry = decodeURIComponent(urlRegex[0]).replace(/\.[^.]*$/, '');
+        }
+    }
 
     const label: string[] = [];
     if (entry) label.push(entry);
@@ -92,8 +99,15 @@ function createIntegrativeModel(data: BasicData, ihm: CoarseData, properties: Mo
     const sequence = getSequence(data, ihm.entities, atomic.hierarchy, coarse.hierarchy);
     const atomicRanges = getAtomicRanges(atomic.hierarchy, ihm.entities, atomic.conformation, sequence);
 
-    const entry = data.entry.id.valueKind(0) === Column.ValueKind.Present
+    let entry = data.entry.id.valueKind(0) === Column.ValueKind.Present
         ? data.entry.id.value(0) : format.name;
+
+    if (entry.includes('http')) {
+        const urlRegex = /[^/]*$/.exec(entry);
+        if (urlRegex) {
+            entry = decodeURIComponent(urlRegex[0]).replace(/\.[^.]*$/, '');
+        }
+    }
 
     const label: string[] = [];
     if (entry) label.push(entry);

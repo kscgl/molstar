@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -10,7 +10,7 @@ import { createTextureImage, TextureImage } from '../../../mol-gl/renderable/uti
 
 const TextAtlasCache: { [k: string]: FontAtlas } = {};
 
-export function getFontAtlas (props: Partial<FontAtlasProps>) {
+export function getFontAtlas(props: Partial<FontAtlasProps>) {
     const hash = JSON.stringify(props);
     if (TextAtlasCache[hash] === undefined) {
         TextAtlasCache[hash] = new FontAtlas(props);
@@ -39,37 +39,37 @@ export type FontAtlasMap = {
 }
 
 export class FontAtlas {
-    readonly props: Readonly<FontAtlasProps>
-    readonly mapped: { [k: string]: FontAtlasMap } = {}
-    readonly placeholder: FontAtlasMap
-    readonly texture: TextureImage<Uint8Array>
+    readonly props: Readonly<FontAtlasProps>;
+    readonly mapped: { [k: string]: FontAtlasMap } = {};
+    readonly placeholder: FontAtlasMap;
+    readonly texture: TextureImage<Uint8Array>;
 
-    private scratchW = 0
-    private scratchH = 0
-    private currentX = 0
-    private currentY = 0
-    private readonly scratchData: Uint8Array
+    private scratchW = 0;
+    private scratchH = 0;
+    private currentX = 0;
+    private currentY = 0;
+    private readonly scratchData: Uint8Array;
 
-    private readonly cutoff = 0.5
-    readonly buffer: number
-    private readonly radius: number
+    private readonly cutoff = 0.5;
+    readonly buffer: number;
+    private readonly radius: number;
 
-    private gridOuter: Float64Array
-    private gridInner: Float64Array
-    private f: Float64Array
-    private d: Float64Array
-    private z: Float64Array
-    private v: Int16Array
+    private gridOuter: Float64Array;
+    private gridInner: Float64Array;
+    private f: Float64Array;
+    private d: Float64Array;
+    private z: Float64Array;
+    private v: Int16Array;
 
-    private scratchCanvas: HTMLCanvasElement
-    private scratchContext: CanvasRenderingContext2D
+    private scratchCanvas: HTMLCanvasElement;
+    private scratchContext: CanvasRenderingContext2D;
 
-    readonly lineHeight: number
+    readonly lineHeight: number;
 
-    private readonly maxWidth: number
-    private readonly middle: number
+    private readonly maxWidth: number;
+    private readonly middle: number;
 
-    constructor (props: Partial<FontAtlasProps> = {}) {
+    constructor(props: Partial<FontAtlasProps> = {}) {
         const p = { ...PD.getDefaultValues(FontAtlasParams), ...props };
         this.props = p;
 
@@ -88,7 +88,7 @@ export class FontAtlas {
         this.scratchCanvas.width = this.maxWidth;
         this.scratchCanvas.height = this.lineHeight;
 
-        this.scratchContext = this.scratchCanvas.getContext('2d')!;
+        this.scratchContext = this.scratchCanvas.getContext('2d', { willReadFrequently: true })!;
         this.scratchContext.font = `${p.fontStyle} ${p.fontVariant} ${p.fontWeight} ${fontSize}px ${p.fontFamily}`;
         this.scratchContext.fillStyle = 'black';
         this.scratchContext.textBaseline = 'middle';
@@ -110,7 +110,7 @@ export class FontAtlas {
         this.placeholder = this.get(String.fromCharCode(0xFFFD));
     }
 
-    get (char: string) {
+    get(char: string) {
         if (this.mapped[char] === undefined) {
             this.draw(char);
 
@@ -144,7 +144,7 @@ export class FontAtlas {
         return this.mapped[char];
     }
 
-    draw (char: string) {
+    draw(char: string) {
         const h = this.lineHeight;
         const ctx = this.scratchContext;
         const data = this.scratchData;

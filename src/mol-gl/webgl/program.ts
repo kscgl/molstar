@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -7,13 +7,13 @@
 import { ShaderCode, DefineValues, addShaderDefines } from '../shader-code';
 import { WebGLState } from './state';
 import { WebGLExtensions } from './extensions';
-import { getUniformSetters, UniformsList, getUniformType, UniformSetters } from './uniform';
+import { getUniformSetters, UniformsList, getUniformType, UniformSetters, isArrayUniform } from './uniform';
 import { AttributeBuffers, getAttribType } from './buffer';
 import { TextureId, Textures } from './texture';
 import { idFactory } from '../../mol-util/id-factory';
 import { RenderableSchema } from '../renderable/schema';
 import { isDebugMode } from '../../mol-util/debug';
-import { GLRenderingContext } from './compat';
+import { GLRenderingContext, isWebGL2 } from './compat';
 import { ShaderType, Shader } from './shader';
 
 const getNextProgramId = idFactory();
@@ -39,12 +39,19 @@ function getLocations(gl: GLRenderingContext, program: WebGLProgram, schema: Ren
         if (spec.type === 'attribute') {
             const loc = gl.getAttribLocation(program, k);
             // unused attributes will result in a `-1` location which is usually fine
-            // if (loc === -1) console.info(`Could not get attribute location for '${k}'`)
+            // if (loc === -1) console.info(`Could not get attribute location for '${k}'`);
             locations[k] = loc;
-        } else if (spec.type === 'uniform' || spec.type === 'texture') {
+        } else if (spec.type === 'uniform') {
+            let loc = gl.getUniformLocation(program, k);
+            // headless-gl requires a '[0]' suffix for array uniforms (https://github.com/stackgl/headless-gl/issues/170)
+            if (loc === null && isArrayUniform(spec.kind)) loc = gl.getUniformLocation(program, k + '[0]');
+            // unused uniforms will result in a `null` location which is usually fine
+            // if (loc === null) console.info(`Could not get uniform location for '${k}'`);
+            locations[k] = loc as number;
+        } else if (spec.type === 'texture') {
             const loc = gl.getUniformLocation(program, k);
             // unused uniforms will result in a `null` location which is usually fine
-            // if (loc === null) console.info(`Could not get uniform location for '${k}'`)
+            // if (loc === null) console.info(`Could not get uniform location for '${k}'`);
             locations[k] = loc as number;
         }
     });
@@ -72,7 +79,7 @@ function checkActiveAttributes(gl: GLRenderingContext, program: WebGLProgram, sc
             }
             const attribType = getAttribType(gl, spec.kind, spec.itemSize);
             if (attribType !== type) {
-                throw new Error(`unexpected attribute type for ${name}`);
+                throw new Error(`unexpected attribute type '${attribType}' for ${name}, expected '${type}'`);
             }
         }
     }
@@ -104,8 +111,12 @@ function checkActiveUniforms(gl: GLRenderingContext, program: WebGLProgram, sche
                         throw new Error(`unexpected sampler type for '${name}'`);
                     }
                 } else if (spec.kind === 'volume-float32' || spec.kind === 'volume-uint8') {
-                    if (type !== (gl as WebGL2RenderingContext).SAMPLER_3D) {
-                        throw new Error(`unexpected sampler type for '${name}'`);
+                    if (isWebGL2(gl)) {
+                        if (type !== gl.SAMPLER_3D) {
+                            throw new Error(`unexpected sampler type for '${name}'`);
+                        }
+                    } else {
+                        throw new Error(`WebGL2 is required to use SAMPLER_3D`);
                     }
                 } else {
                     // TODO
@@ -192,11 +203,13 @@ export function createProgram(gl: GLRenderingContext, state: WebGLState, extensi
             }
         },
         bindAttributes: (attributeBuffers: AttributeBuffers) => {
+            state.clearVertexAttribsState();
             for (let i = 0, il = attributeBuffers.length; i < il; ++i) {
                 const [k, buffer] = attributeBuffers[i];
                 const l = locations[k];
                 if (l !== -1) buffer.bind(l);
             }
+            state.disableUnusedVertexAttribs();
         },
         bindTextures: (textures: Textures, startingTargetUnit: number) => {
             for (let i = 0, il = textures.length; i < il; ++i) {

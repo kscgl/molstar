@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -17,8 +17,9 @@ import { BehaviorSubject } from 'rxjs';
 import { now } from '../../mol-util/now';
 import { Texture, TextureFilter } from './texture';
 import { ComputeRenderable } from '../renderable';
+import { createTimer, WebGLTimer } from './timer';
 
-export function getGLContext(canvas: HTMLCanvasElement, attribs?: WebGLContextAttributes): GLRenderingContext | null {
+export function getGLContext(canvas: HTMLCanvasElement, attribs?: WebGLContextAttributes & { preferWebGl1?: boolean }): GLRenderingContext | null {
     function get(id: 'webgl' | 'experimental-webgl' | 'webgl2') {
         try {
             return canvas.getContext(id, attribs) as GLRenderingContext | null;
@@ -26,7 +27,7 @@ export function getGLContext(canvas: HTMLCanvasElement, attribs?: WebGLContextAt
             return null;
         }
     }
-    const gl = get('webgl2') || get('webgl') || get('experimental-webgl');
+    const gl = (attribs?.preferWebGl1 ? null : get('webgl2')) || get('webgl') || get('experimental-webgl');
     if (isDebugMode) console.log(`isWebgl2: ${isWebGL2(gl)}`);
     return gl;
 }
@@ -51,7 +52,7 @@ export function checkError(gl: GLRenderingContext) {
     }
 }
 
-function unbindResources (gl: GLRenderingContext) {
+function unbindResources(gl: GLRenderingContext) {
     // bind null to all texture units
     const maxTextureImageUnits = gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS);
     for (let i = 0; i < maxTextureImageUnits; ++i) {
@@ -141,12 +142,12 @@ export function readPixels(gl: GLRenderingContext, x: number, y: number, width: 
     if (isDebugMode) checkError(gl);
 }
 
-function getDrawingBufferPixelData(gl: GLRenderingContext) {
+function getDrawingBufferPixelData(gl: GLRenderingContext, state: WebGLState) {
     const w = gl.drawingBufferWidth;
     const h = gl.drawingBufferHeight;
     const buffer = new Uint8Array(w * h * 4);
     unbindFramebuffer(gl);
-    gl.viewport(0, 0, w, h);
+    state.viewport(0, 0, w, h);
     readPixels(gl, 0, 0, w, h, buffer);
     return PixelData.flipY(PixelData.create(buffer, w, h));
 }
@@ -163,6 +164,7 @@ function createStats() {
             renderbuffer: 0,
             shader: 0,
             texture: 0,
+            cubeTexture: 0,
             vertexArray: 0,
         },
 
@@ -186,6 +188,7 @@ export interface WebGLContext {
     readonly state: WebGLState
     readonly stats: WebGLStats
     readonly resources: WebGLResources
+    readonly timer: WebGLTimer
 
     readonly maxTextureSize: number
     readonly max3dTextureSize: number
@@ -221,6 +224,7 @@ export function createContext(gl: GLRenderingContext, props: Partial<{ pixelScal
     const state = createState(gl);
     const stats = createStats();
     const resources = createResources(gl, state, stats, extensions);
+    const timer = createTimer(gl, extensions);
 
     const parameters = {
         maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
@@ -280,8 +284,8 @@ export function createContext(gl: GLRenderingContext, props: Partial<{ pixelScal
     return {
         gl,
         isWebGL2: isWebGL2(gl),
-        get pixelRatio () {
-            const dpr = (typeof window !== 'undefined') ? window.devicePixelRatio : 1;
+        get pixelRatio() {
+            const dpr = (typeof window !== 'undefined') ? (window.devicePixelRatio || 1) : 1;
             return dpr * (props.pixelScale || 1);
         },
 
@@ -289,18 +293,19 @@ export function createContext(gl: GLRenderingContext, props: Partial<{ pixelScal
         state,
         stats,
         resources,
+        timer,
 
-        get maxTextureSize () { return parameters.maxTextureSize; },
-        get max3dTextureSize () { return parameters.max3dTextureSize; },
-        get maxRenderbufferSize () { return parameters.maxRenderbufferSize; },
-        get maxDrawBuffers () { return parameters.maxDrawBuffers; },
-        get maxTextureImageUnits () { return parameters.maxTextureImageUnits; },
+        get maxTextureSize() { return parameters.maxTextureSize; },
+        get max3dTextureSize() { return parameters.max3dTextureSize; },
+        get maxRenderbufferSize() { return parameters.maxRenderbufferSize; },
+        get maxDrawBuffers() { return parameters.maxDrawBuffers; },
+        get maxTextureImageUnits() { return parameters.maxTextureImageUnits; },
 
         namedComputeRenderables: Object.create(null),
         namedFramebuffers: Object.create(null),
         namedTextures: Object.create(null),
 
-        get isContextLost () {
+        get isContextLost() {
             return isContextLost || gl.isContextLost();
         },
         contextRestored,
@@ -341,15 +346,15 @@ export function createContext(gl: GLRenderingContext, props: Partial<{ pixelScal
         readPixelsAsync,
         waitForGpuCommandsComplete: () => waitForGpuCommandsComplete(gl),
         waitForGpuCommandsCompleteSync: () => waitForGpuCommandsCompleteSync(gl),
-        getDrawingBufferPixelData: () => getDrawingBufferPixelData(gl),
+        getDrawingBufferPixelData: () => getDrawingBufferPixelData(gl, state),
         clear: (red: number, green: number, blue: number, alpha: number) => {
             unbindFramebuffer(gl);
             state.enable(gl.SCISSOR_TEST);
             state.depthMask(true);
             state.colorMask(true, true, true, true);
             state.clearColor(red, green, blue, alpha);
-            gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-            gl.scissor(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+            state.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+            state.scissor(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         },
 
@@ -358,7 +363,10 @@ export function createContext(gl: GLRenderingContext, props: Partial<{ pixelScal
             unbindResources(gl);
 
             // to aid GC
-            if (!options?.doNotForceWebGLContextLoss) gl.getExtension('WEBGL_lose_context')?.loseContext();
+            if (!options?.doNotForceWebGLContextLoss) {
+                gl.getExtension('WEBGL_lose_context')?.loseContext();
+                gl.getExtension('STACKGL_destroy_context')?.destroy();
+            }
         }
     };
 }

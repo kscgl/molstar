@@ -18,7 +18,7 @@ import { SetUtils } from '../../mol-util/set';
 import { DefaultMap } from '../../mol-util/map';
 import { mmCIF_chemCompBond_schema } from '../../mol-io/reader/cif/schema/mmcif-extras';
 import { ccd_chemCompAtom_schema } from '../../mol-io/reader/cif/schema/ccd-extras';
-import { ensureDataAvailable, getEncodedCif, readCCD, readPVCD } from './util';
+import { DefaultDataOptions, ensureDataAvailable, getEncodedCif, readCCD, readPVCD } from './util';
 
 type CCB = Table<CCD_Schema['chem_comp_bond']>
 type CCA = Table<CCD_Schema['chem_comp_atom']>
@@ -171,7 +171,7 @@ async function createBonds(
         pdbx_aromatic_flag, pdbx_stereo_config, molstar_protonation_variant
     });
 
-    const bondDatabase =  Database.ofTables(
+    const bondDatabase = Database.ofTables(
         CCB_TABLE_NAME,
         { chem_comp_bond: mmCIF_chemCompBond_schema },
         { chem_comp_bond: bondTable }
@@ -239,8 +239,8 @@ function createAtoms(ccd: DatabaseCollection<CCD_Schema>, pvcd: DatabaseCollecti
     );
 }
 
-async function run(out: string, binary = false, forceDownload = false, ccaOut?: string) {
-    await ensureDataAvailable(forceDownload);
+async function run(out: string, binary = false, options = DefaultDataOptions, ccaOut?: string) {
+    await ensureDataAvailable(options);
     const ccd = await readCCD();
     const pvcd = await readPVCD();
 
@@ -265,30 +265,40 @@ const CCB_TABLE_NAME = 'CHEM_COMP_BONDS';
 const CCA_TABLE_NAME = 'CHEM_COMP_ATOMS';
 
 const parser = new argparse.ArgumentParser({
-    addHelp: true,
+    add_help: true,
     description: 'Create a cif file with one big table of all chem_comp_bond entries from the CCD and PVCD.'
 });
-parser.addArgument('out', {
+parser.add_argument('out', {
     help: 'Generated file output path.'
 });
-parser.addArgument([ '--forceDownload', '-f' ], {
-    action: 'storeTrue',
+parser.add_argument('--forceDownload', '-f', {
+    action: 'store_true',
     help: 'Force download of CCD and PVCD.'
 });
-parser.addArgument([ '--binary', '-b' ], {
-    action: 'storeTrue',
+parser.add_argument('--binary', '-b', {
+    action: 'store_true',
     help: 'Output as BinaryCIF.'
 });
-parser.addArgument(['--ccaOut', '-a'], {
+parser.add_argument('--ccaOut', '-a', {
     help: 'Optional generated file output path for chem_comp_atom data.',
+    required: false
+});
+parser.add_argument('--ccdUrl', '-c', {
+    help: 'Fetch the CCD from a custom URL. This forces download of the CCD.',
+    required: false
+});
+parser.add_argument('--pvcdUrl', '-p', {
+    help: 'Fetch the PVCD from a custom URL. This forces download of the PVCD.',
     required: false
 });
 interface Args {
     out: string,
     forceDownload?: boolean,
     binary?: boolean,
-    ccaOut?: string
+    ccaOut?: string,
+    ccdUrl?: string,
+    pvcdUrl?: string
 }
-const args: Args = parser.parseArgs();
+const args: Args = parser.parse_args();
 
-run(args.out, args.binary, args.forceDownload, args.ccaOut);
+run(args.out, args.binary, { forceDownload: args.forceDownload, ccdUrl: args.ccdUrl, pvcdUrl: args.pvcdUrl }, args.ccaOut);

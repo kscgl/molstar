@@ -11,7 +11,7 @@ import { Structure } from '../structure';
 import { _atom_site } from './categories/atom_site';
 import CifCategory = CifWriter.Category
 import { _struct_conf, _struct_sheet_range } from './categories/secondary-structure';
-import { _chem_comp, _pdbx_chem_comp_identifier, _pdbx_nonpoly_scheme } from './categories/misc';
+import { _chem_comp, _chem_comp_bond, _pdbx_chem_comp_identifier, _pdbx_nonpoly_scheme } from './categories/misc';
 import { Model } from '../model';
 import { getUniqueEntityIndicesFromStructures, copy_mmCif_category, copy_source_mmCifCategory } from './categories/utils';
 import { _struct_asym, _entity_poly, _entity_poly_seq } from './categories/sequence';
@@ -52,6 +52,10 @@ function isWithoutSymmetry(structure: Structure) {
     return structure.units.every(u => u.conformation.operator.isIdentity);
 }
 
+function isWithoutOperator(structure: Structure) {
+    return isWithoutSymmetry(structure) && structure.units.every(u => !u.conformation.operator.assembly && !u.conformation.operator.suffix);
+}
+
 const Categories = [
     // Basics
     copy_mmCif_category('entry'),
@@ -63,9 +67,9 @@ const Categories = [
     copy_mmCif_category('symmetry', isWithoutSymmetry),
 
     // Assemblies
-    copy_mmCif_category('pdbx_struct_assembly', isWithoutSymmetry),
-    copy_mmCif_category('pdbx_struct_assembly_gen', isWithoutSymmetry),
-    copy_mmCif_category('pdbx_struct_oper_list', isWithoutSymmetry),
+    copy_mmCif_category('pdbx_struct_assembly', isWithoutOperator),
+    copy_mmCif_category('pdbx_struct_assembly_gen', isWithoutOperator),
+    copy_mmCif_category('pdbx_struct_oper_list', isWithoutOperator),
 
     // Secondary structure
     _struct_conf,
@@ -81,9 +85,12 @@ const Categories = [
     copy_mmCif_category('pdbx_entity_branch_link'),
     copy_mmCif_category('pdbx_branch_scheme'),
 
+    // Struct conn
+    copy_mmCif_category('struct_conn'),
+
     // Misc
-    // TODO: filter for actual present residues?
     _chem_comp,
+    _chem_comp_bond,
     _pdbx_chem_comp_identifier,
     copy_mmCif_category('atom_sites'),
 
@@ -140,7 +147,7 @@ type encode_mmCIF_categories_Params = {
 export function encode_mmCIF_categories(encoder: CifWriter.Encoder, structures: Structure | Structure[], params?: encode_mmCIF_categories_Params) {
     const first = Array.isArray(structures) ? structures[0] : (structures as Structure);
     const models = first.models;
-    if (models.length !== 1) throw 'Can\'t export stucture composed from multiple models.';
+    if (models.length !== 1) throw new Error('Can\'t export stucture composed from multiple models.');
 
     const ctx: CifExportContext = params?.exportCtx || CifExportContext.create(structures);
 
@@ -247,10 +254,10 @@ function encode_mmCIF_categories_copyAll(encoder: CifWriter.Encoder, ctx: CifExp
 }
 
 
-function to_mmCIF(name: string, structure: Structure, asBinary = false) {
+function to_mmCIF(name: string, structure: Structure, asBinary = false, params?: encode_mmCIF_categories_Params) {
     const enc = CifWriter.createEncoder({ binary: asBinary });
     enc.startDataBlock(name);
-    encode_mmCIF_categories(enc, structure);
+    encode_mmCIF_categories(enc, structure, params);
     return enc.getData();
 }
 

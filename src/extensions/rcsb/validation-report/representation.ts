@@ -16,7 +16,7 @@ import { RepresentationContext, RepresentationParamsGetter, Representation } fro
 import { UnitsRepresentation, StructureRepresentation, StructureRepresentationStateBuilder, StructureRepresentationProvider, ComplexRepresentation } from '../../../mol-repr/structure/representation';
 import { VisualContext } from '../../../mol-repr/visual';
 import { createLinkCylinderMesh, LinkCylinderParams, LinkStyle } from '../../../mol-repr/structure/visual/util/link';
-import { UnitsMeshParams, UnitsVisual, UnitsMeshVisual, StructureGroup } from '../../../mol-repr/structure/units-visual';
+import { UnitsMeshParams, UnitsVisual, UnitsMeshVisual } from '../../../mol-repr/structure/units-visual';
 import { VisualUpdateState } from '../../../mol-repr/util';
 import { LocationIterator } from '../../../mol-geo/util/location-iterator';
 import { ClashesProvider, IntraUnitClashes, InterUnitClashes, ValidationReport } from './prop';
@@ -28,6 +28,7 @@ import { CentroidHelper } from '../../../mol-math/geometry/centroid-helper';
 import { Sphere3D } from '../../../mol-math/geometry';
 import { bondLabel } from '../../../mol-theme/label';
 import { getUnitKindsParam } from '../../../mol-repr/structure/params';
+import { StructureGroup } from '../../../mol-repr/structure/visual/util/common';
 
 //
 
@@ -54,7 +55,16 @@ function createIntraUnitClashCylinderMesh(ctx: VisualContext, unit: Unit, struct
         radius: (edgeIndex: number) => magnitude[edgeIndex] * sizeFactor,
     };
 
-    return createLinkCylinderMesh(ctx, builderProps, props, mesh);
+    const { mesh: m, boundingSphere } = createLinkCylinderMesh(ctx, builderProps, props, mesh);
+
+    if (boundingSphere) {
+        m.setBoundingSphere(boundingSphere);
+    } else if (m.triangleCount > 0) {
+        const sphere = Sphere3D.expand(Sphere3D(), structure.boundary.sphere, 1 * sizeFactor);
+        m.setBoundingSphere(sphere);
+    }
+
+    return m;
 }
 
 export const IntraUnitClashParams = {
@@ -106,7 +116,7 @@ function getIntraClashLabel(structure: Structure, unit: Unit.Atomic, clashes: In
 
 function IntraClashLoci(structure: Structure, unit: Unit.Atomic, clashes: IntraUnitClashes, elements: number[]) {
     return DataLoci('intra-clashes', { unit, clashes }, elements,
-        (boundingSphere: Sphere3D) =>  getIntraClashBoundingSphere(unit, clashes, elements, boundingSphere),
+        (boundingSphere: Sphere3D) => getIntraClashBoundingSphere(unit, clashes, elements, boundingSphere),
         () => getIntraClashLabel(structure, unit, clashes, elements));
 }
 
@@ -124,7 +134,7 @@ function getIntraClashLoci(pickingId: PickingId, structureGroup: StructureGroup,
 }
 
 function eachIntraClash(loci: Loci, structureGroup: StructureGroup, apply: (interval: Interval) => boolean) {
-    let changed = false;
+    const changed = false;
     // TODO
     return changed;
 }
@@ -168,7 +178,16 @@ function createInterUnitClashCylinderMesh(ctx: VisualContext, structure: Structu
         radius: (edgeIndex: number) => edges[edgeIndex].props.magnitude * sizeFactor
     };
 
-    return createLinkCylinderMesh(ctx, builderProps, props, mesh);
+    const { mesh: m, boundingSphere } = createLinkCylinderMesh(ctx, builderProps, props, mesh);
+
+    if (boundingSphere) {
+        m.setBoundingSphere(boundingSphere);
+    } else {
+        const sphere = Sphere3D.expand(Sphere3D(), structure.boundary.sphere, 1 * sizeFactor);
+        m.setBoundingSphere(sphere);
+    }
+
+    return m;
 }
 
 export const InterUnitClashParams = {
@@ -225,7 +244,7 @@ function getInterClashLabel(structure: Structure, clashes: InterUnitClashes, ele
 
 function InterClashLoci(structure: Structure, clashes: InterUnitClashes, elements: number[]) {
     return DataLoci('inter-clashes', clashes, elements,
-        (boundingSphere: Sphere3D) =>  getInterClashBoundingSphere(structure, clashes, elements, boundingSphere),
+        (boundingSphere: Sphere3D) => getInterClashBoundingSphere(structure, clashes, elements, boundingSphere),
         () => getInterClashLabel(structure, clashes, elements));
 }
 
@@ -239,7 +258,7 @@ function getInterClashLoci(pickingId: PickingId, structure: Structure, id: numbe
 }
 
 function eachInterClash(loci: Loci, structure: Structure, apply: (interval: Interval) => boolean) {
-    let changed = false;
+    const changed = false;
     // TODO
     return changed;
 }

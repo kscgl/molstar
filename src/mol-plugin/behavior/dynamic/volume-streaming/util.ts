@@ -32,10 +32,10 @@ export function getStreamingMethod(s?: Structure, defaultKind: VolumeServerInfo.
 /** Returns EMD ID when available, otherwise falls back to PDB ID */
 export function getEmIds(model: Model): string[] {
     const ids: string[] = [];
-    if (!MmcifFormat.is(model.sourceData)) return [ model.entryId ];
+    if (!MmcifFormat.is(model.sourceData)) return [model.entryId];
 
     const { db_id, db_name, content_type } = model.sourceData.data.db.pdbx_database_related;
-    if (!db_name.isDefined) return [ model.entryId ];
+    if (!db_name.isDefined) return [model.entryId];
 
     for (let i = 0, il = db_name.rowCount; i < il; ++i) {
         if (db_name.value(i).toUpperCase() === 'EMDB' && content_type.value(i) === 'associated EM volume') {
@@ -47,7 +47,7 @@ export function getEmIds(model: Model): string[] {
 }
 
 export function getXrayIds(model: Model): string[] {
-    return [ model.entryId ];
+    return [model.entryId];
 }
 
 export function getIds(method: VolumeServerInfo.Kind, s?: Structure): string[] {
@@ -70,14 +70,36 @@ export async function getContourLevelEmdb(plugin: PluginContext, taskCtx: Runtim
     const emdbHeaderServer = plugin.config.get(PluginConfig.VolumeStreaming.EmdbHeaderServer);
     const header = await plugin.fetch({ url: `${emdbHeaderServer}/${emdbId.toUpperCase()}/header/${emdbId.toLowerCase()}.xml`, type: 'xml' }).runInContext(taskCtx);
     const map = header.getElementsByTagName('map')[0];
-    const contourLevel = parseFloat(map.getElementsByTagName('contourLevel')[0].textContent!);
+    const contours = map.getElementsByTagName('contour');
 
+    let primaryContour = contours[0];
+    for (let i = 1; i < contours.length; i++) {
+        if (contours[i].getAttribute('primary') === 'true') {
+            primaryContour = contours[i];
+            break;
+        }
+    }
+    const contourLevel = parseFloat(primaryContour.getElementsByTagName('level')[0].textContent!);
     return contourLevel;
 }
 
 export async function getContourLevelPdbe(plugin: PluginContext, taskCtx: RuntimeContext, emdbId: string) {
+    // TODO: parametrize URL in plugin settings?
     emdbId = emdbId.toUpperCase();
-    // TODO: parametrize to a differnt URL? in plugin settings perhaps
+    const header = await plugin.fetch({ url: `https://www.ebi.ac.uk/emdb/api/entry/map/${emdbId}`, type: 'json' }).runInContext(taskCtx);
+    const contours = header?.map?.contour_list?.contour;
+
+    if (!contours || contours.length === 0) {
+        // try fallback to the old API
+        return getContourLevelPdbeLegacy(plugin, taskCtx, emdbId);
+    }
+
+    return contours.find((c: any) => c.primary)?.level ?? contours[0].level;
+}
+
+async function getContourLevelPdbeLegacy(plugin: PluginContext, taskCtx: RuntimeContext, emdbId: string) {
+    // TODO: parametrize URL in plugin settings?
+    emdbId = emdbId.toUpperCase();
     const header = await plugin.fetch({ url: `https://www.ebi.ac.uk/pdbe/api/emdb/entry/map/${emdbId}`, type: 'json' }).runInContext(taskCtx);
     const emdbEntry = header?.[emdbId];
     let contourLevel: number | undefined = void 0;
@@ -93,7 +115,7 @@ export async function getEmdbIds(plugin: PluginContext, taskCtx: RuntimeContext,
     const summary = await plugin.fetch({ url: `https://www.ebi.ac.uk/pdbe/api/pdb/entry/summary/${pdbId}`, type: 'json' }).runInContext(taskCtx);
 
     const summaryEntry = summary?.[pdbId];
-    let emdbIds: string[] = [];
+    const emdbIds: string[] = [];
     if (summaryEntry?.[0]?.related_structures) {
         const emdb = summaryEntry[0].related_structures.filter((s: any) => s.resource === 'EMDB' && s.relationship === 'associated EM volume');
         if (!emdb.length) {

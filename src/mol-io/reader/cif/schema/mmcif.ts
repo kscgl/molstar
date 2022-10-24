@@ -1,7 +1,7 @@
 /**
- * Copyright (c) 2017-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2017-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
- * Code-generated 'mmCIF' schema file. Dictionary versions: mmCIF 5.333, IHM 1.12, CARB draft.
+ * Code-generated 'mmCIF' schema file. Dictionary versions: mmCIF 5.360, IHM 1.17, MA 1.4.2.
  *
  * @author molstar/ciftools package
  */
@@ -17,6 +17,7 @@ const coord = Schema.coord;
 const Aliased = Schema.Aliased;
 const Matrix = Schema.Matrix;
 const Vector = Schema.Vector;
+const lstr = Schema.lstr;
 const List = Schema.List;
 
 export const mmCIF_Schema = {
@@ -29,6 +30,11 @@ export const mmCIF_Schema = {
      * The data items for describing anisotropic atomic
      * displacement factors are only used if the corresponding items
      * are not given in the ATOM_SITE_ANISOTROP category.
+     *
+     * wwPDB recommends wwPDB-assigned residue number, residue ID,
+     * and chain ID, _atom_site.auth_seq_id _atom_site.auth_comp_id, and
+     * _atom_site.auth_asym_id, respectively, to be used for publication
+     * materials.
      */
     atom_site: {
         /**
@@ -210,6 +216,28 @@ export const mmCIF_Schema = {
          * formal charge assignment normally found in chemical diagrams.
          */
         pdbx_formal_charge: int,
+        /**
+         * This data item is an ordinal which identifies distinct chemical components in the atom_site category, both
+         * polymeric and non-polymeric.
+         */
+        pdbx_label_index: int,
+        /**
+         * The name of additional external databases with residue level mapping.
+         */
+        pdbx_sifts_xref_db_name: str,
+        /**
+         * The accession code related to the additional external database entry.
+         */
+        pdbx_sifts_xref_db_acc: str,
+        /**
+         * The sequence position of the external database entry that corresponds
+         * to the residue mapping defined by the SIFTS process.
+         */
+        pdbx_sifts_xref_db_num: str,
+        /**
+         * Describes the residue type of the given UniProt match
+         */
+        pdbx_sifts_xref_db_res: str,
         /**
          * The model id corresponding to the atom site.
          * This data item is a pointer to _ihm_model_list.model_id
@@ -485,7 +513,7 @@ export const mmCIF_Schema = {
          * _chem_comp.mon_nstd_parent, _chem_comp.mon_nstd_class and
          * _chem_comp.mon_nstd_details data items.
          */
-        mon_nstd_flag: Aliased<'no' | 'n' | 'yes' | 'y'>(str),
+        mon_nstd_flag: Aliased<'no' | 'n' | 'yes' | 'y'>(lstr),
         /**
          * The full name of the component.
          */
@@ -496,7 +524,7 @@ export const mmCIF_Schema = {
          * linking monomers, monomers with some type of N-terminal (or 5')
          * cap and monomers with some type of C-terminal (or 3') cap.
          */
-        type: Aliased<'D-peptide linking' | 'L-peptide linking' | 'D-peptide NH3 amino terminus' | 'L-peptide NH3 amino terminus' | 'D-peptide COOH carboxy terminus' | 'L-peptide COOH carboxy terminus' | 'DNA linking' | 'RNA linking' | 'L-RNA linking' | 'L-DNA linking' | 'DNA OH 5 prime terminus' | 'RNA OH 5 prime terminus' | 'DNA OH 3 prime terminus' | 'RNA OH 3 prime terminus' | 'D-saccharide, beta linking' | 'D-saccharide, alpha linking' | 'L-saccharide, beta linking' | 'L-saccharide, alpha linking' | 'L-saccharide' | 'D-saccharide' | 'saccharide' | 'non-polymer' | 'peptide linking' | 'peptide-like' | 'L-gamma-peptide, C-delta linking' | 'D-gamma-peptide, C-delta linking' | 'L-beta-peptide, C-gamma linking' | 'D-beta-peptide, C-gamma linking' | 'other'>(str),
+        type: Aliased<'d-peptide linking' | 'l-peptide linking' | 'd-peptide nh3 amino terminus' | 'l-peptide nh3 amino terminus' | 'd-peptide cooh carboxy terminus' | 'l-peptide cooh carboxy terminus' | 'dna linking' | 'rna linking' | 'l-rna linking' | 'l-dna linking' | 'dna oh 5 prime terminus' | 'rna oh 5 prime terminus' | 'dna oh 3 prime terminus' | 'rna oh 3 prime terminus' | 'd-saccharide, beta linking' | 'd-saccharide, alpha linking' | 'l-saccharide, beta linking' | 'l-saccharide, alpha linking' | 'l-saccharide' | 'd-saccharide' | 'saccharide' | 'non-polymer' | 'peptide linking' | 'peptide-like' | 'l-gamma-peptide, c-delta linking' | 'd-gamma-peptide, c-delta linking' | 'l-beta-peptide, c-gamma linking' | 'd-beta-peptide, c-gamma linking' | 'other'>(lstr),
         /**
          * Synonym list for the component.
          */
@@ -533,7 +561,7 @@ export const mmCIF_Schema = {
          * bond associated with the specified atoms, expressed as a bond
          * order.
          */
-        value_order: Aliased<'sing' | 'doub' | 'trip' | 'quad' | 'arom' | 'poly' | 'delo' | 'pi'>(str),
+        value_order: Aliased<'sing' | 'doub' | 'trip' | 'quad' | 'arom' | 'poly' | 'delo' | 'pi'>(lstr),
         /**
          * Ordinal index for the component bond list.
          */
@@ -541,11 +569,11 @@ export const mmCIF_Schema = {
         /**
          * Stereochemical configuration across a double bond.
          */
-        pdbx_stereo_config: Aliased<'E' | 'Z' | 'N'>(str),
+        pdbx_stereo_config: Aliased<'e' | 'z' | 'n'>(lstr),
         /**
          * A flag indicating an aromatic bond.
          */
-        pdbx_aromatic_flag: Aliased<'Y' | 'N'>(str),
+        pdbx_aromatic_flag: Aliased<'y' | 'n'>(lstr),
     },
     /**
      * Data items in the CITATION category record details about the
@@ -677,7 +705,7 @@ export const mmCIF_Schema = {
         /**
          * An abbreviation that identifies the database.
          */
-        database_id: Aliased<'CAS' | 'CSD' | 'EMDB' | 'ICSD' | 'MDF' | 'NDB' | 'NBS' | 'PDB' | 'PDF' | 'RCSB' | 'EBI' | 'PDBE' | 'BMRB' | 'WWPDB' | 'PDB_ACC'>(str),
+        database_id: Aliased<'alphafolddb' | 'cas' | 'csd' | 'emdb' | 'icsd' | 'modelarchive' | 'mdf' | 'modbase' | 'ndb' | 'nbs' | 'pdb' | 'pdf' | 'rcsb' | 'swiss-model_repository' | 'ebi' | 'pdbe' | 'bmrb' | 'wwpdb' | 'pdb_acc'>(lstr),
         /**
          * The code assigned by the database identified in
          * _database_2.database_id.
@@ -740,7 +768,7 @@ export const mmCIF_Schema = {
          * manipulated sources are expected to have further information in
          * the ENTITY_SRC_GEN category.
          */
-        src_method: Aliased<'nat' | 'man' | 'syn'>(str),
+        src_method: Aliased<'nat' | 'man' | 'syn'>(lstr),
         /**
          * Defines the type of the entity.
          *
@@ -753,7 +781,7 @@ export const mmCIF_Schema = {
          * Water entities are not expected to have corresponding
          * entries in the ENTITY category.
          */
-        type: Aliased<'polymer' | 'non-polymer' | 'macrolide' | 'water' | 'branched'>(str),
+        type: Aliased<'polymer' | 'non-polymer' | 'macrolide' | 'water' | 'branched'>(lstr),
         /**
          * A description of the entity.
          *
@@ -793,12 +821,12 @@ export const mmCIF_Schema = {
          * one monomer-to-monomer link different from that implied by
          * _entity_poly.type.
          */
-        nstd_linkage: Aliased<'no' | 'n' | 'yes' | 'y'>(str),
+        nstd_linkage: Aliased<'no' | 'n' | 'yes' | 'y'>(lstr),
         /**
          * A flag to indicate whether the polymer contains at least
          * one monomer that is not considered standard.
          */
-        nstd_monomer: Aliased<'no' | 'n' | 'yes' | 'y'>(str),
+        nstd_monomer: Aliased<'no' | 'n' | 'yes' | 'y'>(lstr),
         /**
          * The type of the polymer.
          */
@@ -808,39 +836,69 @@ export const mmCIF_Schema = {
          */
         pdbx_strand_id: List(',', x => x),
         /**
-         * Chemical sequence expressed as string of one-letter
-         * amino acid codes. Modifications and non-standard
-         * amino acids are coded as X.
+         * Sequence of protein or nucleic acid polymer in standard one-letter
+         * codes of amino acids or nucleotides. Non-standard amino
+         * acids/nucleotides are represented by their Chemical
+         * Component Dictionary (CCD) codes in
+         * parenthesis. Deoxynucleotides are represented by the
+         * specially-assigned 2-letter CCD codes in parenthesis,
+         * with 'D' prefix added to their ribonucleotide
+         * counterparts. For hybrid polymer, each residue is
+         * represented by the code of its individual type. A
+         * cyclic polymer is represented in linear sequence from
+         * the chosen start to end.
+         *
+         * A for Alanine or Adenosine-5'-monophosphate
+         * C for Cysteine or Cytidine-5'-monophosphate
+         * D for Aspartic acid
+         * E for Glutamic acid
+         * F for Phenylalanine
+         * G for Glycine or Guanosine-5'-monophosphate
+         * H for Histidine
+         * I for Isoleucine or Inosinic Acid
+         * L for Leucine
+         * K for Lysine
+         * M for Methionine
+         * N for Asparagine  or Unknown ribonucleotide
+         * O for Pyrrolysine
+         * P for Proline
+         * Q for Glutamine
+         * R for Arginine
+         * S for Serine
+         * T for Threonine
+         * U for Selenocysteine or Uridine-5'-monophosphate
+         * V for Valine
+         * W for Tryptophan
+         * Y for Tyrosine
+         * (DA) for 2'-deoxyadenosine-5'-monophosphate
+         * (DC) for 2'-deoxycytidine-5'-monophosphate
+         * (DG) for 2'-deoxyguanosine-5'-monophosphate
+         * (DT) for Thymidine-5'-monophosphate
+         * (MSE) for Selenomethionine
+         * (SEP) for Phosphoserine
+         * (PTO) for Phosphothreonine
+         * (PTR) for Phosphotyrosine
+         * (PCA) for Pyroglutamic acid
+         * (UNK) for Unknown amino acid
+         * (ACE) for Acetylation cap
+         * (NH2) for Amidation cap
          */
         pdbx_seq_one_letter_code: str,
         /**
-         * Cannonical chemical sequence expressed as string of
-         * one-letter amino acid codes. Modifications are coded
-         * as the parent amino acid where possible.
+         * Canonical sequence of protein or nucleic acid polymer in standard
+         * one-letter codes of amino acids or nucleotides,
+         * corresponding to the sequence in
+         * _entity_poly.pdbx_seq_one_letter_code. Non-standard
+         * amino acids/nucleotides are represented by the codes of
+         * their parents if parent is specified in
+         * _chem_comp.mon_nstd_parent_comp_id, or by letter 'X' if
+         * parent is not specified. Deoxynucleotides are
+         * represented by their canonical one-letter codes of A,
+         * C, G, or T.
          *
-         * A  for alanine or adenine
-         * B  for ambiguous asparagine/aspartic-acid
-         * R  for arginine
-         * N  for asparagine
-         * D  for aspartic-acid
-         * C  for cysteine or cystine or cytosine
-         * Q  for glutamine
-         * E  for glutamic-acid
-         * Z  for ambiguous glutamine/glutamic acid
-         * G  for glycine or guanine
-         * H  for histidine
-         * I  for isoleucine
-         * L  for leucine
-         * K  for lysine
-         * M  for methionine
-         * F  for phenylalanine
-         * P  for proline
-         * S  for serine
-         * T  for threonine or thymine
-         * W  for tryptophan
-         * Y  for tyrosine
-         * V  for valine
-         * U  for uracil
+         * For modifications with several parent amino acids,
+         * all corresponding parent amino acid codes will be listed
+         * (ex. chromophores).
          */
         pdbx_seq_one_letter_code_can: str,
         /**
@@ -858,15 +916,14 @@ export const mmCIF_Schema = {
      */
     entity_poly_seq: {
         /**
-         * This data item is a pointer to _entity_poly.entity_id in the
-         * ENTITY_POLY category.
+         * This data item is a pointer to _entity.id in the ENTITY category.
          */
         entity_id: str,
         /**
          * A flag to indicate whether this monomer in the polymer is
          * heterogeneous in sequence.
          */
-        hetero: Aliased<'no' | 'n' | 'yes' | 'y'>(str),
+        hetero: Aliased<'no' | 'n' | 'yes' | 'y'>(lstr),
         /**
          * This data item is a pointer to _chem_comp.id in the CHEM_COMP
          * category.
@@ -910,6 +967,48 @@ export const mmCIF_Schema = {
          * The method used in the experiment.
          */
         method: Aliased<'X-RAY DIFFRACTION' | 'NEUTRON DIFFRACTION' | 'FIBER DIFFRACTION' | 'ELECTRON CRYSTALLOGRAPHY' | 'ELECTRON MICROSCOPY' | 'SOLUTION NMR' | 'SOLID-STATE NMR' | 'SOLUTION SCATTERING' | 'POWDER DIFFRACTION' | 'INFRARED SPECTROSCOPY' | 'EPR' | 'FLUORESCENCE TRANSFER' | 'THEORETICAL MODEL'>(str),
+    },
+    /**
+     * Data items in the SOFTWARE category record details about
+     * the software used in the structure analysis, which implies
+     * any software used in the generation of any data items
+     * associated with the structure determination and
+     * structure representation.
+     *
+     * These data items allow computer programs to be referenced
+     * in more detail than data items in the COMPUTING category do.
+     */
+    software: {
+        /**
+         * The classification of the program according to its
+         * major function.
+         */
+        classification: str,
+        /**
+         * The date the software was released.
+         */
+        date: str,
+        /**
+         * Description of the software.
+         */
+        description: str,
+        /**
+         * The name of the software.
+         */
+        name: str,
+        /**
+         * The classification of the software according to the most
+         * common types.
+         */
+        type: Aliased<'program' | 'library' | 'package' | 'filter' | 'jiffy' | 'other'>(lstr),
+        /**
+         * The version of the software.
+         */
+        version: str,
+        /**
+         * An ordinal index for this category
+         */
+        pdbx_ordinal: int,
     },
     /**
      * Data items in the STRUCT category record details about the
@@ -1024,7 +1123,7 @@ export const mmCIF_Schema = {
          * This data item is a pointer to _struct_conf_type.id in the
          * STRUCT_CONF_TYPE category.
          */
-        conf_type_id: Aliased<'HELX_P' | 'HELX_OT_P' | 'HELX_RH_P' | 'HELX_RH_OT_P' | 'HELX_RH_AL_P' | 'HELX_RH_GA_P' | 'HELX_RH_OM_P' | 'HELX_RH_PI_P' | 'HELX_RH_27_P' | 'HELX_RH_3T_P' | 'HELX_RH_PP_P' | 'HELX_LH_P' | 'HELX_LH_OT_P' | 'HELX_LH_AL_P' | 'HELX_LH_GA_P' | 'HELX_LH_OM_P' | 'HELX_LH_PI_P' | 'HELX_LH_27_P' | 'HELX_LH_3T_P' | 'HELX_LH_PP_P' | 'HELX_N' | 'HELX_OT_N' | 'HELX_RH_N' | 'HELX_RH_OT_N' | 'HELX_RH_A_N' | 'HELX_RH_B_N' | 'HELX_RH_Z_N' | 'HELX_LH_N' | 'HELX_LH_OT_N' | 'HELX_LH_A_N' | 'HELX_LH_B_N' | 'HELX_LH_Z_N' | 'TURN_P' | 'TURN_OT_P' | 'TURN_TY1_P' | 'TURN_TY1P_P' | 'TURN_TY2_P' | 'TURN_TY2P_P' | 'TURN_TY3_P' | 'TURN_TY3P_P' | 'STRN'>(str),
+        conf_type_id: Aliased<'bend' | 'helx_p' | 'helx_ot_p' | 'helx_rh_p' | 'helx_rh_ot_p' | 'helx_rh_al_p' | 'helx_rh_ga_p' | 'helx_rh_om_p' | 'helx_rh_pi_p' | 'helx_rh_27_p' | 'helx_rh_3t_p' | 'helx_rh_pp_p' | 'helx_lh_p' | 'helx_lh_ot_p' | 'helx_lh_al_p' | 'helx_lh_ga_p' | 'helx_lh_om_p' | 'helx_lh_pi_p' | 'helx_lh_27_p' | 'helx_lh_3t_p' | 'helx_lh_pp_p' | 'helx_n' | 'helx_ot_n' | 'helx_rh_n' | 'helx_rh_ot_n' | 'helx_rh_a_n' | 'helx_rh_b_n' | 'helx_rh_z_n' | 'helx_lh_n' | 'helx_lh_ot_n' | 'helx_lh_a_n' | 'helx_lh_b_n' | 'helx_lh_z_n' | 'turn_p' | 'turn_ot_p' | 'turn_ty1_p' | 'turn_ty1p_p' | 'turn_ty2_p' | 'turn_ty2p_p' | 'turn_ty3_p' | 'turn_ty3p_p' | 'strn' | 'other'>(lstr),
         /**
          * A description of special aspects of the conformation assignment.
          */
@@ -1124,7 +1223,7 @@ export const mmCIF_Schema = {
          * This data item is a pointer to _struct_conn_type.id in the
          * STRUCT_CONN_TYPE category.
          */
-        conn_type_id: Aliased<'covale' | 'disulf' | 'metalc' | 'hydrog'>(str),
+        conn_type_id: Aliased<'covale' | 'disulf' | 'metalc' | 'hydrog'>(lstr),
         /**
          * A description of special aspects of the connection.
          */
@@ -1344,7 +1443,7 @@ export const mmCIF_Schema = {
          * The chemical bond order associated with the specified atoms in
          * this contact.
          */
-        pdbx_value_order: Aliased<'sing' | 'doub' | 'trip' | 'quad'>(str),
+        pdbx_value_order: Aliased<'sing' | 'doub' | 'trip' | 'quad'>(lstr),
     },
     /**
      * Data items in the STRUCT_CONN_TYPE category record details
@@ -1359,7 +1458,7 @@ export const mmCIF_Schema = {
         /**
          * The chemical or structural type of the interaction.
          */
-        id: Aliased<'covale' | 'disulf' | 'hydrog' | 'metalc' | 'mismat' | 'saltbr' | 'modres' | 'covale_base' | 'covale_sugar' | 'covale_phosphate'>(str),
+        id: Aliased<'covale' | 'disulf' | 'hydrog' | 'metalc' | 'mismat' | 'saltbr' | 'modres' | 'covale_base' | 'covale_sugar' | 'covale_phosphate'>(lstr),
         /**
          * A reference that specifies the criteria used to define the
          * interaction.
@@ -1713,7 +1812,7 @@ export const mmCIF_Schema = {
         /**
          * The cell settings for this space-group symmetry.
          */
-        cell_setting: Aliased<'triclinic' | 'monoclinic' | 'orthorhombic' | 'tetragonal' | 'rhombohedral' | 'trigonal' | 'hexagonal' | 'cubic'>(str),
+        cell_setting: Aliased<'triclinic' | 'monoclinic' | 'orthorhombic' | 'tetragonal' | 'rhombohedral' | 'trigonal' | 'hexagonal' | 'cubic'>(lstr),
         /**
          * Space-group number from International Tables for Crystallography
          * Vol. A (2002).
@@ -1759,7 +1858,7 @@ export const mmCIF_Schema = {
         /**
          * Code for status of NMR constraints file.
          */
-        status_code_mr: Aliased<'PROC' | 'WAIT' | 'REL' | 'HOLD' | 'HPUB' | 'OBS' | 'WDRN' | 'AUTH' | 'POLC' | 'REPL' | 'RMVD'>(str),
+        status_code_mr: Aliased<'PROC' | 'WAIT' | 'REL' | 'HOLD' | 'HPUB' | 'OBS' | 'WDRN' | 'AUTH' | 'POLC' | 'REPL' | 'AUCO' | 'RMVD'>(str),
         /**
          * The value of _pdbx_database_status.entry_id identifies the data block.
          */
@@ -1773,7 +1872,7 @@ export const mmCIF_Schema = {
          * This code indicates whether the entry belongs to
          * Structural Genomics Project.
          */
-        SG_entry: Aliased<'Y' | 'N'>(str),
+        SG_entry: Aliased<'y' | 'n'>(lstr),
         /**
          * The site where the file was deposited.
          */
@@ -1785,7 +1884,7 @@ export const mmCIF_Schema = {
         /**
          * Code for status of chemical shift data file.
          */
-        status_code_cs: Aliased<'PROC' | 'WAIT' | 'AUTH' | 'POLC' | 'REPL' | 'REL' | 'HOLD' | 'HPUB' | 'OBS' | 'RMVD' | 'WDRN'>(str),
+        status_code_cs: Aliased<'PROC' | 'WAIT' | 'AUTH' | 'POLC' | 'REPL' | 'AUCO' | 'REL' | 'HOLD' | 'HPUB' | 'OBS' | 'RMVD' | 'WDRN'>(str),
         /**
          * The methods development category in which this
          * entry has been placed.
@@ -1797,7 +1896,7 @@ export const mmCIF_Schema = {
          * A value of 'N' indicates that the no PDB format data file is
          * corresponding to this entry is available in the PDB archive.
          */
-        pdb_format_compatible: Aliased<'Y' | 'N'>(str),
+        pdb_format_compatible: Aliased<'y' | 'n'>(lstr),
     },
     /**
      * The PDBX_NONPOLY_SCHEME category provides residue level nomenclature
@@ -1869,6 +1968,10 @@ export const mmCIF_Schema = {
          */
         content_type: Aliased<'minimized average structure' | 'representative structure' | 'ensemble' | 'derivative structure' | 'native structure' | 'associated EM volume' | 'other EM volume' | 'associated NMR restraints' | 'associated structure factors' | 'associated SAS data' | 'protein target sequence and/or protocol data' | 'split' | 're-refinement' | 'complete structure' | 'unspecified' | 'other'>(str),
     },
+    /**
+     * The PDBX_ENTITY_NONPOLY category provides a mapping between
+     * entity and the nonpolymer component
+     */
     pdbx_entity_nonpoly: {
         /**
          * This data item is a pointer to _entity.id in the ENTITY category.
@@ -1946,7 +2049,7 @@ export const mmCIF_Schema = {
          * The value of polymer flag indicates whether the unobserved or
          * zero occupancy residue is part of a polymer chain or not
          */
-        polymer_flag: Aliased<'Y' | 'N'>(str),
+        polymer_flag: Aliased<'y' | 'n'>(lstr),
         /**
          * The value of occupancy flag indicates whether the residue
          * is unobserved (= 1) or the coordinates have an occupancy of zero (=0)
@@ -2134,6 +2237,10 @@ export const mmCIF_Schema = {
         oligomeric_count: int,
         /**
          * A description of special aspects of the macromolecular assembly.
+         *
+         * In the PDB, 'representative helical assembly', 'complete point assembly',
+         * 'complete icosahedral assembly', 'software_defined_assembly', 'author_defined_assembly',
+         * and 'author_and_software_defined_assembly' are considered "biologically relevant assemblies.
          */
         details: str,
         /**
@@ -2195,7 +2302,7 @@ export const mmCIF_Schema = {
         /**
          * Defines the polymer characteristic of the entity.
          */
-        type: Aliased<'polymer' | 'polymer-like' | 'non-polymer' | 'branched'>(str),
+        type: Aliased<'polymer' | 'polymer-like' | 'non-polymer' | 'branched'>(lstr),
         /**
          * Additional details about this entity.
          */
@@ -2290,7 +2397,7 @@ export const mmCIF_Schema = {
         /**
          * The bond order target for the chemical linkage.
          */
-        value_order: Aliased<'sing' | 'doub' | 'trip' | 'quad' | 'arom' | 'poly' | 'delo' | 'pi'>(str),
+        value_order: Aliased<'sing' | 'doub' | 'trip' | 'quad' | 'arom' | 'poly' | 'delo' | 'pi'>(lstr),
         /**
          * The entity component identifier for the first of two entities containing the linkage.
          */
@@ -2376,7 +2483,7 @@ export const mmCIF_Schema = {
         /**
          * The bond order target for the non-standard linkage.
          */
-        value_order: Aliased<'sing' | 'doub' | 'trip' | 'quad' | 'arom' | 'poly' | 'delo' | 'pi'>(str),
+        value_order: Aliased<'sing' | 'doub' | 'trip' | 'quad' | 'arom' | 'poly' | 'delo' | 'pi'>(lstr),
     },
     /**
      * Data items in the PDBX_MOLECULE category identify reference molecules
@@ -2404,18 +2511,18 @@ export const mmCIF_Schema = {
      */
     pdbx_molecule_features: {
         /**
-         * The value of _pdbx_molecule_features.prd_id is the PDB accession code for this
+         * The value of _pdbx_molecule_features.prd_id is the accession code for this
          * reference molecule.
          */
         prd_id: str,
         /**
          * Broadly defines the function of the molecule.
          */
-        class: Aliased<'Antagonist' | 'Antibiotic' | 'Anticancer' | 'Anticoagulant' | 'Antifungal' | 'Antigen' | 'Antiinflammatory' | 'Antimicrobial' | 'Antineoplastic' | 'Antiparasitic' | 'Antiretroviral' | 'Anthelmintic' | 'Antithrombotic' | 'Antitumor' | 'Antiviral' | 'CASPASE inhibitor' | 'Chaperone binding' | 'Enzyme inhibitor' | 'Drug delivery' | 'Glycan component' | 'Growth factor' | 'Immunosuppressant' | 'Inducer' | 'Inhibitor' | 'Lantibiotic' | 'Metabolism' | 'Metal transport' | 'Nutrient' | 'Oxidation-reduction' | 'Protein binding' | 'Receptor' | 'Substrate analog' | 'Synthetic opioid' | 'Thrombin inhibitor' | 'Transition state mimetic' | 'Transport activator' | 'Trypsin inhibitor' | 'Toxin' | 'Unknown' | 'Water retention' | 'Anticoagulant, Antithrombotic' | 'Antibiotic, Antimicrobial' | 'Antibiotic, Anthelmintic' | 'Antibiotic, Antineoplastic' | 'Antimicrobial, Antiretroviral' | 'Antimicrobial, Antitumor' | 'Antimicrobial, Antiparasitic, Antibiotic' | 'Thrombin inhibitor, Trypsin inhibitor'>(str),
+        class: Aliased<'antagonist' | 'antibiotic' | 'anticancer' | 'anticoagulant' | 'antifungal' | 'antigen' | 'antiinflammatory' | 'antimicrobial' | 'antineoplastic' | 'antiparasitic' | 'antiretroviral' | 'anthelmintic' | 'antithrombotic' | 'antitumor' | 'antiviral' | 'caspase inhibitor' | 'chaperone binding' | 'enzyme inhibitor' | 'drug delivery' | 'glycan component' | 'growth factor' | 'immunosuppressant' | 'inducer' | 'inhibitor' | 'lantibiotic' | 'metabolism' | 'metal transport' | 'nutrient' | 'oxidation-reduction' | 'protein binding' | 'receptor' | 'substrate analog' | 'synthetic opioid' | 'thrombin inhibitor' | 'transition state mimetic' | 'transport activator' | 'trypsin inhibitor' | 'toxin' | 'unknown' | 'water retention' | 'anticoagulant, antithrombotic' | 'antibiotic, antimicrobial' | 'antibiotic, anthelmintic' | 'antibiotic, antineoplastic' | 'antimicrobial, antiretroviral' | 'antimicrobial, antitumor' | 'antimicrobial, antiparasitic, antibiotic' | 'thrombin inhibitor, trypsin inhibitor'>(lstr),
         /**
          * Defines the structural classification of the molecule.
          */
-        type: Aliased<'Amino acid' | 'Aminoglycoside' | 'Anthracycline' | 'Anthraquinone' | 'Ansamycin' | 'Chalkophore' | 'Chromophore' | 'Glycopeptide' | 'Cyclic depsipeptide' | 'Cyclic lipopeptide' | 'Cyclic peptide' | 'Heterocyclic' | 'Imino sugar' | 'Keto acid' | 'Lipoglycopeptide' | 'Lipopeptide' | 'Macrolide' | 'Non-polymer' | 'Nucleoside' | 'Oligopeptide' | 'Oligosaccharide' | 'Peptaibol' | 'Peptide-like' | 'Polycyclic' | 'Polypeptide' | 'Polysaccharide' | 'Quinolone' | 'Thiolactone' | 'Thiopeptide' | 'Siderophore' | 'Unknown' | 'Chalkophore, Polypeptide'>(str),
+        type: Aliased<'amino acid' | 'aminoglycoside' | 'anthracycline' | 'anthraquinone' | 'ansamycin' | 'chalkophore' | 'chromophore' | 'glycopeptide' | 'cyclic depsipeptide' | 'cyclic lipopeptide' | 'cyclic peptide' | 'heterocyclic' | 'imino sugar' | 'keto acid' | 'lipoglycopeptide' | 'lipopeptide' | 'macrolide' | 'non-polymer' | 'nucleoside' | 'oligopeptide' | 'oligosaccharide' | 'peptaibol' | 'peptide-like' | 'polycyclic' | 'polypeptide' | 'polysaccharide' | 'quinolone' | 'thiolactone' | 'thiopeptide' | 'siderophore' | 'unknown' | 'chalkophore, polypeptide'>(lstr),
         /**
          * A name of the molecule.
          */
@@ -2562,7 +2669,7 @@ export const mmCIF_Schema = {
         /**
          * This data item contains the descriptor type.
          */
-        type: Aliased<'LINUCS' | 'Glycam Condensed Sequence' | 'Glycam Condensed Core Sequence' | 'WURCS'>(str),
+        type: Aliased<'linucs' | 'glycam condensed sequence' | 'glycam condensed core sequence' | 'wurcs'>(lstr),
         /**
          * This data item contains the name of the program
          * or library used to compute the descriptor.
@@ -2637,7 +2744,7 @@ export const mmCIF_Schema = {
          * A flag to indicate whether this monomer in the entity is
          * heterogeneous in sequence.
          */
-        hetero: Aliased<'no' | 'n' | 'yes' | 'y'>(str),
+        hetero: Aliased<'no' | 'n' | 'yes' | 'y'>(lstr),
         /**
          * This data item is a pointer to _chem_comp.id in the CHEM_COMP
          * category.
@@ -2709,7 +2816,7 @@ export const mmCIF_Schema = {
         /**
          * The chiral configuration of the first atom making the linkage.
          */
-        atom_stereo_config_1: Aliased<'R' | 'S' | 'N'>(str),
+        atom_stereo_config_1: Aliased<'r' | 's' | 'n'>(lstr),
         /**
          * The atom identifier/name for the second atom making the linkage.
          */
@@ -2721,11 +2828,11 @@ export const mmCIF_Schema = {
         /**
          * The chiral configuration of the second atom making the linkage.
          */
-        atom_stereo_config_2: Aliased<'R' | 'S' | 'N'>(str),
+        atom_stereo_config_2: Aliased<'r' | 's' | 'n'>(lstr),
         /**
          * The bond order target for the chemical linkage.
          */
-        value_order: Aliased<'sing' | 'doub' | 'trip' | 'quad' | 'arom' | 'poly' | 'delo' | 'pi'>(str),
+        value_order: Aliased<'sing' | 'doub' | 'trip' | 'quad' | 'arom' | 'poly' | 'delo' | 'pi'>(lstr),
     },
     /**
      * Data items in the PDBX_ENTITY_BRANCH category specify the list
@@ -2756,7 +2863,7 @@ export const mmCIF_Schema = {
          * A flag to indicate whether this monomer in the entity is
          * heterogeneous in sequence.
          */
-        hetero: Aliased<'no' | 'n' | 'yes' | 'y'>(str),
+        hetero: Aliased<'no' | 'n' | 'yes' | 'y'>(lstr),
         /**
          * Pointer to _atom_site.label_asym_id.
          */
@@ -3229,15 +3336,15 @@ export const mmCIF_Schema = {
         /**
          * A flag to indicate if the modeling is multi scale.
          */
-        multi_scale_flag: Aliased<'YES' | 'NO'>(str),
+        multi_scale_flag: Aliased<'yes' | 'no'>(lstr),
         /**
          * A flag to indicate if the modeling is multi state.
          */
-        multi_state_flag: Aliased<'YES' | 'NO'>(str),
+        multi_state_flag: Aliased<'yes' | 'no'>(lstr),
         /**
          * A flag to indicate if the modeling involves an ensemble ordered by time or other order.
          */
-        ordered_flag: Aliased<'YES' | 'NO'>(str),
+        ordered_flag: Aliased<'yes' | 'no'>(lstr),
         /**
          * The file id corresponding to the script used in the modeling protocol step.
          * This data item is a pointer to _ihm_external_files.id in the IHM_EXTERNAL_FILES category.
@@ -3526,7 +3633,7 @@ export const mmCIF_Schema = {
          * A flag that indicates whether the dataset is archived in
          * an IHM related database or elsewhere.
          */
-        database_hosted: Aliased<'YES' | 'NO'>(str),
+        database_hosted: Aliased<'yes' | 'no'>(lstr),
     },
     /**
      * Category to define groups or collections of input datasets.
@@ -3603,7 +3710,7 @@ export const mmCIF_Schema = {
         /**
          * The name of the database containing the dataset entry.
          */
-        db_name: Aliased<'PDB' | 'PDB-Dev' | 'BMRB' | 'EMDB' | 'EMPIAR' | 'SASBDB' | 'PRIDE' | 'MODEL ARCHIVE' | 'MASSIVE' | 'BioGRID' | 'Other'>(str),
+        db_name: Aliased<'PDB' | 'PDB-Dev' | 'BMRB' | 'EMDB' | 'EMPIAR' | 'SASBDB' | 'PRIDE' | 'MODEL ARCHIVE' | 'MASSIVE' | 'BioGRID' | 'ProXL' | 'Other'>(str),
         /**
          * The accession code for the database entry.
          */
@@ -3930,7 +4037,7 @@ export const mmCIF_Schema = {
         /**
          * The type of crosslinker used.
          */
-        linker_type: Aliased<'EDC' | 'DSS' | 'EGS' | 'BS3' | 'BS2G' | 'DST' | 'sulfo-SDA' | 'sulfo-SMCC' | 'DSSO' | 'DSG' | 'BSP' | 'BMSO' | 'DHSO' | 'CYS' | 'SDA' | 'DSA' | 'Other'>(str),
+        linker_type: Aliased<'EDC' | 'DSS' | 'EGS' | 'BS3' | 'BS2G' | 'DST' | 'sulfo-SDA' | 'sulfo-SMCC' | 'DSSO' | 'DSG' | 'BSP' | 'BMSO' | 'DHSO' | 'CYS' | 'SDA' | 'DSA' | 'BrdU' | 'LCSDA' | 'CDI' | 'ADH' | 'Other'>(str),
         /**
          * Identifier to the crosslinking dataset.
          * This data item is a pointer to the _ihm_dataset_list.id in the
@@ -4133,7 +4240,7 @@ export const mmCIF_Schema = {
          * whether the whole image is used or only a portion of it is used (by masking
          * or by other means) as restraint in the modeling.
          */
-        image_segment_flag: Aliased<'YES' | 'NO'>(str),
+        image_segment_flag: Aliased<'yes' | 'no'>(lstr),
         /**
          * Number of 2D projections of the model used in the fitting.
          */
@@ -4286,7 +4393,7 @@ export const mmCIF_Schema = {
          * whether the whole SAS profile is used or only a portion of it is used
          * (by masking or by other means) as restraint in the modeling.
          */
-        profile_segment_flag: Aliased<'YES' | 'NO'>(str),
+        profile_segment_flag: Aliased<'yes' | 'no'>(lstr),
         /**
          * The type of atoms in the model fit to the SAS data.
          */
@@ -4681,6 +4788,289 @@ export const mmCIF_Schema = {
          * handled in the IHM_INTERFACE_RESIDUE_FEATURE category rather than here.
          */
         dataset_list_id: int,
+    },
+    /**
+     * Data items in the MA_MODEL_LIST category record the
+     * details of the models being deposited.
+     */
+    ma_model_list: {
+        /**
+         * A unique identifier for the model / model group combination.
+         */
+        ordinal_id: int,
+        /**
+         * A unique identifier for the structural model being deposited.
+         */
+        model_id: int,
+        /**
+         * An identifier to group structural models into collections or sets.
+         * A cluster of models and its representative can either be grouped together
+         * or can be separate groups in the ma_model_list table. The choice between
+         * the two options should be decided based on how the modeling was carried out
+         * and how the representative was chosen. If the representative is a member of
+         * the ensemble (i.e., best scoring model), then it is recommended that the
+         * representative and the ensemble belong to the same model group. If the
+         * representative is calculated from the ensemble (i.e., centroid), then it is
+         * recommended that the representative be separated into a different group.
+         * If the models do not need to be grouped into collections, then the
+         * _ma_model_list.model_group_id is the same as _ma_model_list.model_id.
+         */
+        model_group_id: int,
+        /**
+         * A decsriptive name for the model.
+         */
+        model_name: str,
+        /**
+         * A decsriptive name for the model group.
+         */
+        model_group_name: str,
+        /**
+         * The type of model.
+         */
+        model_type: Aliased<'Homology model' | 'Ab initio model' | 'Other'>(str),
+        /**
+         * The data_id identifier. This data item is a pointer to
+         * _ma_data.id in the MA_DATA category.
+         */
+        data_id: int,
+    },
+    /**
+     * Data items in the MA_TARGET_ENTITY category record details about
+     * the target entities. The details are provided for each entity
+     * being modeled.
+     */
+    ma_target_entity: {
+        /**
+         * A unique identifier for the distinct molecular entity of the target.
+         * This data item is a pointer to _entity.id in the ENTITY category.
+         */
+        entity_id: str,
+        /**
+         * The data_id identifier. This data item is a pointer to
+         * _ma_data.id in the MA_DATA category.
+         */
+        data_id: int,
+        /**
+         * The origin of the target entity.
+         */
+        origin: Aliased<'reference database' | 'designed'>(str),
+    },
+    /**
+     * Data items in the MA_TARGET_ENTITY_INSTANCE category record details about
+     * the instances of target entities modeled.
+     */
+    ma_target_entity_instance: {
+        /**
+         * A unique identifier for the instance of the entity.
+         */
+        asym_id: str,
+        /**
+         * A unique identifier for the distinct molecular entity of the target.
+         * This data item is a pointer to _ma_target_entity.entity_id in the
+         * MA_TARGET_ENTITY category.
+         */
+        entity_id: str,
+        /**
+         * Additional details about the entity instance.
+         */
+        details: str,
+    },
+    /**
+     * Data items in the MA_TARGET_REF_DB_DETAILS category record details about
+     * the reference databases for the target sequences.
+     */
+    ma_target_ref_db_details: {
+        /**
+         * An identifier for the target entity.
+         */
+        target_entity_id: str,
+        /**
+         * The name of the database containing reference information about
+         * this entity or biological unit.
+         */
+        db_name: Aliased<'UNP' | 'GB' | 'OrthoDB' | 'NCBI' | 'JGI' | 'Phytozyme' | 'Other'>(str),
+        /**
+         * The code for this entity or biological unit or for a closely
+         * related entity or biological unit in the named database.
+         * This can include the version number.
+         */
+        db_code: str,
+        /**
+         * Accession code assigned by the reference database.
+         */
+        db_accession: str,
+        /**
+         * Database code assigned by the reference database for a sequence isoform.   An isoform sequence is an
+         * alternative protein sequence that can be generated from the same gene by a single or by a combination of
+         * biological events such as: alternative promoter usage, alternative splicing, alternative initiation
+         * and ribosomal frameshifting.
+         */
+        seq_db_isoform: str,
+        /**
+         * Beginning index in the chemical sequence from the
+         * reference database.
+         */
+        seq_db_align_begin: str,
+        /**
+         * Ending index in the chemical sequence from the
+         * reference database.
+         */
+        seq_db_align_end: str,
+        /**
+         * Taxonomy identifier provided by NCBI.
+         */
+        ncbi_taxonomy_id: str,
+        /**
+         * Scientific name of the organism.
+         */
+        organism_scientific: str,
+    },
+    /**
+     * Data items in the MA_DATA category capture the different kinds of
+     * data used in the modeling. These can be multiple sequence
+     * alignments, spatial restraints, template structures etc.
+     */
+    ma_data: {
+        /**
+         * A unique identifier for the data.
+         */
+        id: int,
+        /**
+         * The type of data held in the dataset.
+         */
+        content_type: Aliased<'target' | 'template structure' | 'polymeric template library' | 'spatial restraints' | 'target-template alignment' | 'coevolution MSA' | 'model coordinates' | 'input structure' | 'reference database' | 'other'>(str),
+        /**
+         * Details for other content types.
+         */
+        content_type_other_details: str,
+        /**
+         * An author-given name for the content held in the dataset.
+         */
+        name: str,
+    },
+    /**
+     * Data items in the MA_SOFTWARE_GROUP category describes the
+     * collection of software into groups so that they can be used
+     * efficiently in the MA_PROTOCOL_STEP category.
+     */
+    ma_software_group: {
+        /**
+         * A unique identifier for the category.
+         */
+        ordinal_id: int,
+        /**
+         * An identifier for the group entry.
+         * If data does not need to be grouped, then _ma_software_group.group_id
+         * is the same as _ma_software_group.software_id.
+         */
+        group_id: int,
+        /**
+         * The identifier for the software.
+         * This data item is a pointer to _software.pdbx_ordinal
+         * in the SOFTWARE category.
+         */
+        software_id: int,
+    },
+    /**
+     * Data items in the MA_QA_METRIC category record the
+     * details of the metrics use to assess model quality.
+     */
+    ma_qa_metric: {
+        /**
+         * An identifier for the QA metric.
+         */
+        id: int,
+        /**
+         * Name of the QA metric.
+         */
+        name: str,
+        /**
+         * The type of QA metric.
+         */
+        type: Aliased<'zscore' | 'energy' | 'distance' | 'normalized score' | 'pLDDT' | 'pLDDT in [0,1]' | 'pLDDT all-atom' | 'pLDDT all-atom in [0,1]' | 'PAE' | 'pTM' | 'ipTM' | 'contact probability' | 'other'>(str),
+        /**
+         * The mode of calculation of the QA metric.
+         */
+        mode: Aliased<'local' | 'global' | 'local-pairwise'>(str),
+        /**
+         * Identifier to the set of software used to calculate the QA metric.
+         * This data item is a pointer to the _ma_software_group.group_id in the
+         * MA_SOFTWARE_GROUP category.
+         */
+        software_group_id: int,
+    },
+    /**
+     * Data items in the MA_QA_METRIC_GLOBAL category captures the
+     * details of the global QA metrics, calculated at the model-level.
+     */
+    ma_qa_metric_global: {
+        /**
+         * A unique identifier for the category.
+         */
+        ordinal_id: int,
+        /**
+         * The identifier for the structural model, for which global QA metric is provided.
+         * This data item is a pointer to _ma_model_list.model_id
+         * in the MA_MODEL_LIST category.
+         */
+        model_id: int,
+        /**
+         * The identifier for the QA metric.
+         * This data item is a pointer to _ma_qa_metric.id in the
+         * MA_QA_METRIC category.
+         */
+        metric_id: int,
+        /**
+         * The value of the global QA metric.
+         */
+        metric_value: float,
+    },
+    /**
+     * Data items in the MA_QA_METRIC_LOCAL category captures the
+     * details of the local QA metrics, calculated at the residue-level.
+     */
+    ma_qa_metric_local: {
+        /**
+         * A unique identifier for the category.
+         */
+        ordinal_id: int,
+        /**
+         * The identifier for the structural model, for which local QA metric is provided.
+         * This data item is a pointer to _ma_model_list.model_id
+         * in the MA_MODEL_LIST category.
+         */
+        model_id: int,
+        /**
+         * The identifier for the asym id of the residue in the
+         * structural model, for which local QA metric is provided.
+         * This data item is a pointer to _atom_site.label_asym_id
+         * in the ATOM_SITE category.
+         */
+        label_asym_id: str,
+        /**
+         * The identifier for the sequence index of the residue
+         * in the structural model, for which local QA metric is provided.
+         * This data item is a pointer to _atom_site.label_seq_id
+         * in the ATOM_SITE category.
+         */
+        label_seq_id: int,
+        /**
+         * The component identifier for the residue in the
+         * structural model, for which local QA metric is provided.
+         * This data item is a pointer to _atom_site.label_comp_id
+         * in the ATOM_SITE category.
+         */
+        label_comp_id: str,
+        /**
+         * The identifier for the QA metric.
+         * This data item is a pointer to _ma_qa_metric.id in the
+         * MA_QA_METRIC category.
+         */
+        metric_id: int,
+        /**
+         * The value of the local QA metric.
+         */
+        metric_value: float,
     },
 };
 

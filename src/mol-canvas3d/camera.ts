@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -10,6 +10,7 @@ import { Viewport, cameraProject, cameraUnproject } from './camera/util';
 import { CameraTransitionManager } from './camera/transition';
 import { BehaviorSubject } from 'rxjs';
 import { Scene } from '../mol-gl/scene';
+import { assertUnreachable } from '../mol-util/type-helpers';
 
 export { ICamera, Camera };
 
@@ -27,14 +28,18 @@ interface ICamera {
     readonly fogNear: number,
 }
 
+const tmpPos1 = Vec3();
+const tmpPos2 = Vec3();
+const tmpClip = Vec4();
+
 class Camera implements ICamera {
     readonly view: Mat4 = Mat4.identity();
     readonly projection: Mat4 = Mat4.identity();
     readonly projectionView: Mat4 = Mat4.identity();
     readonly inverseProjectionView: Mat4 = Mat4.identity();
 
-    private pixelScale: number
-    get pixelRatio () {
+    private pixelScale: number;
+    get pixelRatio() {
         const dpr = (typeof window !== 'undefined') ? window.devicePixelRatio : 1;
         return dpr * this.pixelScale;
     }
@@ -43,11 +48,11 @@ class Camera implements ICamera {
     readonly state: Readonly<Camera.Snapshot> = Camera.createDefaultSnapshot();
     readonly viewOffset = Camera.ViewOffset();
 
-    near = 1
-    far = 10000
-    fogNear = 5000
-    fogFar = 10000
-    zoom = 1
+    near = 1;
+    far = 10000;
+    fogNear = 5000;
+    fogFar = 10000;
+    zoom = 1;
 
     readonly transition: CameraTransitionManager = new CameraTransitionManager(this);
     readonly stateChanged = new BehaviorSubject<Partial<Camera.Snapshot>>(this.state);
@@ -80,7 +85,7 @@ class Camera implements ICamera {
         switch (this.state.mode) {
             case 'orthographic': updateOrtho(this); break;
             case 'perspective': updatePers(this); break;
-            default: throw new Error('unknown camera mode');
+            default: assertUnreachable(this.state.mode);
         }
 
         const changed = !Mat4.areEqual(this.projection, this.prevProjection, EPSILON) || !Mat4.areEqual(this.view, this.prevView, EPSILON);
@@ -155,12 +160,30 @@ class Camera implements ICamera {
         }
     }
 
+    /** Transform point into 2D window coordinates. */
     project(out: Vec4, point: Vec3) {
         return cameraProject(out, point, this.viewport, this.projectionView);
     }
 
-    unproject(out: Vec3, point: Vec3) {
+    /**
+     * Transform point from screen space to 3D coordinates.
+     * The point must have `x` and `y` set to 2D window coordinates
+     * and `z` between 0 (near) and 1 (far); the optional `w` is not used.
+     */
+    unproject(out: Vec3, point: Vec3 | Vec4) {
         return cameraUnproject(out, point, this.viewport, this.inverseProjectionView);
+    }
+
+    /** World space pixel size at given `point` */
+    getPixelSize(point: Vec3) {
+        // project -> unproject of `point` does not exactly return the same
+        // to get a sufficiently accurate measure we unproject the original
+        // clip position in addition to the one shifted bey one pixel
+        this.project(tmpClip, point);
+        this.unproject(tmpPos1, tmpClip);
+        tmpClip[0] += 1;
+        this.unproject(tmpPos2, tmpClip);
+        return Vec3.distance(tmpPos1, tmpPos2);
     }
 
     constructor(state?: Partial<Camera.Snapshot>, viewport = Viewport.create(0, 0, 128, 128), props: Partial<{ pixelScale: number }> = {}) {
@@ -178,7 +201,7 @@ namespace Camera {
     /**
      * Sets an offseted view in a larger frustum. This is useful for
      * - multi-window or multi-monitor/multi-machine setups
-     * - jittering the camera position for
+     * - jittering the camera position for sampling
      */
     export interface ViewOffset {
         enabled: boolean,
@@ -237,7 +260,8 @@ namespace Camera {
             radius: 0,
             radiusMax: 10,
             fog: 50,
-            clipFar: true
+            clipFar: true,
+            minNear: 5,
         };
     }
 
@@ -253,6 +277,7 @@ namespace Camera {
         radiusMax: number
         fog: number
         clipFar: boolean
+        minNear: number
     }
 
     export function copySnapshot(out: Snapshot, source?: Partial<Snapshot>) {
@@ -269,6 +294,7 @@ namespace Camera {
         if (typeof source.radiusMax !== 'undefined') out.radiusMax = source.radiusMax;
         if (typeof source.fog !== 'undefined') out.fog = source.fog;
         if (typeof source.clipFar !== 'undefined') out.clipFar = source.clipFar;
+        if (typeof source.minNear !== 'undefined') out.minNear = source.minNear;
 
         return out;
     }
@@ -280,6 +306,7 @@ namespace Camera {
             && a.radiusMax === b.radiusMax
             && a.fog === b.fog
             && a.clipFar === b.clipFar
+            && a.minNear === b.minNear
             && Vec3.exactEquals(a.position, b.position)
             && Vec3.exactEquals(a.up, b.up)
             && Vec3.exactEquals(a.target, b.target);
@@ -347,7 +374,7 @@ function updatePers(camera: Camera) {
 }
 
 function updateClip(camera: Camera) {
-    let { radius, radiusMax, mode, fog, clipFar } = camera.state;
+    let { radius, radiusMax, mode, fog, clipFar, minNear } = camera.state;
     if (radius < 0.01) radius = 0.01;
 
     const normalizedFar = clipFar ? radius : radiusMax;
@@ -361,12 +388,12 @@ function updateClip(camera: Camera) {
 
     if (mode === 'perspective') {
         // set at least to 5 to avoid slow sphere impostor rendering
-        near = Math.max(Math.min(radiusMax, 5), near);
-        far = Math.max(5, far);
+        near = Math.max(Math.min(radiusMax, minNear), near);
+        far = Math.max(minNear, far);
     } else {
         // not too close to 0 as it causes issues with outline rendering
-        near = Math.max(Math.min(radiusMax, 5), near);
-        far = Math.max(5, far);
+        near = Math.max(Math.min(radiusMax, minNear), near);
+        far = Math.max(minNear, far);
     }
 
     if (near === far) {

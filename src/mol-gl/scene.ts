@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  * @author David Sehnal <david.sehnal@gmail.com>
@@ -15,6 +15,8 @@ import { arraySetRemove } from '../mol-util/array';
 import { BoundaryHelper } from '../mol-math/geometry/boundary-helper';
 import { hash1 } from '../mol-data/util';
 import { GraphicsRenderable } from './renderable';
+import { GraphicsRenderVariants } from './webgl/render-item';
+import { clamp } from '../mol-math/interpolate';
 
 const boundaryHelper = new BoundaryHelper('98');
 
@@ -43,8 +45,8 @@ function calculateBoundingSphere(renderables: GraphicsRenderable[], boundingSphe
 }
 
 function renderableSort(a: GraphicsRenderable, b: GraphicsRenderable) {
-    const drawProgramIdA = a.getProgram('colorBlended').id;
-    const drawProgramIdB = b.getProgram('colorBlended').id;
+    const drawProgramIdA = (a.getProgram('colorBlended') || a.getProgram('colorWboit') || a.getProgram('colorDpoit')).id;
+    const drawProgramIdB = (b.getProgram('colorBlended') || b.getProgram('colorWboit') || b.getProgram('colorDpoit')).id;
     const materialIdA = a.materialId;
     const materialIdB = b.materialId;
 
@@ -78,6 +80,12 @@ interface Scene extends Object3D {
     has: (o: GraphicsRenderObject) => boolean
     clear: () => void
     forEach: (callbackFn: (value: GraphicsRenderable, key: GraphicsRenderObject) => void) => void
+    /** Marker average of primitive renderables */
+    readonly markerAverage: number
+    /** Opacity average of primitive renderables */
+    readonly opacityAverage: number
+    /** Is `true` if any primitive renderable (possibly) has any opaque part */
+    readonly hasOpaque: boolean
 }
 
 namespace Scene {
@@ -85,7 +93,7 @@ namespace Scene {
         readonly renderables: ReadonlyArray<GraphicsRenderable>
     }
 
-    export function create(ctx: WebGLContext): Scene {
+    export function create(ctx: WebGLContext, variants = GraphicsRenderVariants): Scene {
         const renderableMap = new Map<GraphicsRenderObject, GraphicsRenderable>();
         const renderables: GraphicsRenderable[] = [];
         const boundingSphere = Sphere3D();
@@ -97,12 +105,16 @@ namespace Scene {
         let boundingSphereDirty = true;
         let boundingSphereVisibleDirty = true;
 
+        let markerAverage = 0;
+        let opacityAverage = 0;
+        let hasOpaque = false;
+
         const object3d = Object3D.create();
         const { view, position, direction, up } = object3d;
 
         function add(o: GraphicsRenderObject) {
             if (!renderableMap.has(o)) {
-                const renderable = createRenderable(ctx, o);
+                const renderable = createRenderable(ctx, o, variants);
                 renderables.push(renderable);
                 if (o.type === 'direct-volume') {
                     volumes.push(renderable);
@@ -153,6 +165,9 @@ namespace Scene {
             }
 
             renderables.sort(renderableSort);
+            markerAverage = calculateMarkerAverage();
+            opacityAverage = calculateOpacityAverage();
+            hasOpaque = calculateHasOpaque();
             return true;
         }
 
@@ -174,10 +189,58 @@ namespace Scene {
             const newVisibleHash = computeVisibleHash();
             if (newVisibleHash !== visibleHash) {
                 boundingSphereVisibleDirty = true;
+                markerAverage = calculateMarkerAverage();
+                opacityAverage = calculateOpacityAverage();
+                hasOpaque = calculateHasOpaque();
+                visibleHash = newVisibleHash;
                 return true;
             } else {
                 return false;
             }
+        }
+
+        function calculateMarkerAverage() {
+            if (primitives.length === 0) return 0;
+            let count = 0;
+            let markerAverage = 0;
+            for (let i = 0, il = primitives.length; i < il; ++i) {
+                if (!primitives[i].state.visible) continue;
+                markerAverage += primitives[i].values.markerAverage.ref.value;
+                count += 1;
+            }
+            return count > 0 ? markerAverage / count : 0;
+        }
+
+        function calculateOpacityAverage() {
+            if (primitives.length === 0) return 0;
+            let count = 0;
+            let opacityAverage = 0;
+            for (let i = 0, il = primitives.length; i < il; ++i) {
+                const p = primitives[i];
+                if (!p.state.visible) continue;
+                // TODO: simplify, handle in renderable.state???
+                // uAlpha is updated in "render" so we need to recompute it here
+                const alpha = clamp(p.values.alpha.ref.value * p.state.alphaFactor, 0, 1);
+                const xray = p.values.dXrayShaded?.ref.value ? 0.5 : 1;
+                const fuzzy = p.values.dPointStyle?.ref.value === 'fuzzy' ? 0.5 : 1;
+                const text = p.values.dGeometryType.ref.value === 'text' ? 0.5 : 1;
+                opacityAverage += (1 - p.values.transparencyAverage.ref.value) * alpha * xray * fuzzy * text;
+                count += 1;
+            }
+            return count > 0 ? opacityAverage / count : 0;
+        }
+
+        function calculateHasOpaque() {
+            if (primitives.length === 0) return false;
+            for (let i = 0, il = primitives.length; i < il; ++i) {
+                const p = primitives[i];
+                if (!p.state.visible) continue;
+
+                if (p.state.opaque) return true;
+                if (p.state.alphaFactor === 1 && p.values.alpha.ref.value === 1 && p.values.transparencyAverage.ref.value !== 1) return true;
+                if (p.values.dTransparentBackfaces?.ref.value === 'opaque') return true;
+            }
+            return false;
         }
 
         return {
@@ -205,6 +268,9 @@ namespace Scene {
                 } else {
                     syncVisibility();
                 }
+                markerAverage = calculateMarkerAverage();
+                opacityAverage = calculateOpacityAverage();
+                hasOpaque = calculateHasOpaque();
             },
             add: (o: GraphicsRenderObject) => commitQueue.add(o),
             remove: (o: GraphicsRenderObject) => commitQueue.remove(o),
@@ -218,6 +284,8 @@ namespace Scene {
                     renderables[i].dispose();
                 }
                 renderables.length = 0;
+                primitives.length = 0;
+                volumes.length = 0;
                 renderableMap.clear();
                 boundingSphereDirty = true;
                 boundingSphereVisibleDirty = true;
@@ -239,10 +307,18 @@ namespace Scene {
                 if (boundingSphereVisibleDirty) {
                     calculateBoundingSphere(renderables, boundingSphereVisible, true);
                     boundingSphereVisibleDirty = false;
-                    visibleHash = computeVisibleHash();
                 }
                 return boundingSphereVisible;
-            }
+            },
+            get markerAverage() {
+                return markerAverage;
+            },
+            get opacityAverage() {
+                return opacityAverage;
+            },
+            get hasOpaque() {
+                return hasOpaque;
+            },
         };
     }
 }

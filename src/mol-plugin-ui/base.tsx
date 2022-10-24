@@ -13,7 +13,7 @@ import { Icon, ArrowRightSvg, ArrowDropDownSvg } from './controls/icons';
 
 export const PluginReactContext = React.createContext(void 0 as any as PluginUIContext);
 
-export abstract class PluginUIComponent<P = {}, S = {}, SS = {}> extends React.Component<P, S, SS> {
+export abstract class PluginUIComponent<P extends {} = {}, S = {}, SS = {}> extends React.Component<P & { children?: any }, S, SS> {
     static contextType = PluginReactContext;
     readonly plugin: PluginUIContext;
 
@@ -82,10 +82,10 @@ export type CollapsableState = {
 export abstract class CollapsableControls<P = {}, S = {}, SS = {}> extends PluginUIComponent<P & CollapsableProps, S & CollapsableState, SS> {
     toggleCollapsed = () => {
         this.setState({ isCollapsed: !this.state.isCollapsed } as (S & CollapsableState));
-    }
+    };
 
     componentDidUpdate(prevProps: P & CollapsableProps) {
-        if(this.props.initiallyCollapsed !== undefined && prevProps.initiallyCollapsed !== this.props.initiallyCollapsed) {
+        if (this.props.initiallyCollapsed !== undefined && prevProps.initiallyCollapsed !== this.props.initiallyCollapsed) {
             this.setState({ isCollapsed: this.props.initiallyCollapsed as any });
         }
     }

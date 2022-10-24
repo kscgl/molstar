@@ -10,8 +10,11 @@ import { Entities, EntitySubtype } from '../../../mol-model/structure/model/prop
 import { getEntityType, getEntitySubtype } from '../../../mol-model/structure/model/types';
 import { ElementIndex, EntityIndex, Model } from '../../../mol-model/structure/model';
 import { BasicData, BasicSchema, Entity } from './schema';
+import { mmCIF_chemComp_schema } from '../../../mol-io/reader/cif/schema/mmcif-extras';
 
-export function getEntities(data: BasicData, properties: Model['properties']): Entities {
+type ChemCompType = mmCIF_chemComp_schema['type']['T'];
+
+export function getEntityData(data: BasicData): Entities {
     let entityData: Entity;
 
     if (!data.entity.id.isDefined) {
@@ -96,7 +99,7 @@ export function getEntities(data: BasicData, properties: Model['properties']): E
     }
 
     if (assignSubtype) {
-        const chemCompType = new Map<string, string>();
+        const chemCompType = new Map<string, ChemCompType>();
         if (data.chem_comp) {
             const { id, type } = data.chem_comp;
             for (let i = 0, il = data.chem_comp._rowCount; i < il; i++) {
@@ -110,7 +113,7 @@ export function getEntities(data: BasicData, properties: Model['properties']): E
                 const entityId = label_entity_id.value(i);
                 if (!entityIds.has(entityId)) {
                     const compId = label_comp_id.value(i);
-                    const compType = chemCompType.get(compId) || '';
+                    const compType = chemCompType.get(compId) || 'other';
                     subtypes[getEntityIndex(entityId)] = getEntitySubtype(compId, compType);
                     entityIds.add(entityId);
                 }
@@ -121,28 +124,32 @@ export function getEntities(data: BasicData, properties: Model['properties']): E
 
     const subtypeColumn = Column.ofArray({ array: subtypes, schema: EntitySubtype });
 
-    //
-
-    const prdIds: string[] = new Array(entityData._rowCount);
-    prdIds.fill('');
-
-    if (data.pdbx_molecule && data.pdbx_molecule.prd_id.isDefined) {
-        const { asym_id, prd_id, _rowCount } = data.pdbx_molecule;
-        for (let i = 0; i < _rowCount; ++i) {
-            const asymId = asym_id.value(i);
-            const entityId = properties.structAsymMap.get(asymId)?.entity_id;
-            if (entityId !== undefined) {
-                prdIds[getEntityIndex(entityId)] = prd_id.value(i);
-            }
-        }
-    }
-
-    const prdIdColumn = Column.ofArray({ array: prdIds, schema: Column.Schema.str });
-
     return {
         data: entityData,
         subtype: subtypeColumn,
-        prd_id: prdIdColumn,
         getEntityIndex
+    };
+}
+
+export function getEntitiesWithPRD(data: BasicData, entities: Entities, structAsymMap: Model['properties']['structAsymMap']): Entities {
+    if (!data.pdbx_molecule || !data.pdbx_molecule.prd_id.isDefined) {
+        return entities;
+    }
+
+    const prdIds: string[] = new Array(entities.data._rowCount);
+    prdIds.fill('');
+    const { asym_id, prd_id, _rowCount } = data.pdbx_molecule;
+    for (let i = 0; i < _rowCount; ++i) {
+        const asymId = asym_id.value(i);
+        const entityId = structAsymMap.get(asymId)?.entity_id;
+        if (entityId !== undefined) {
+            prdIds[entities.getEntityIndex(entityId)] = prd_id.value(i);
+        }
+    }
+    const prdIdColumn = Column.ofArray({ array: prdIds, schema: Column.Schema.str });
+
+    return {
+        ...entities,
+        prd_id: prdIdColumn
     };
 }

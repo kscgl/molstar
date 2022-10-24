@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  * @author David Sehnal <david.sehnal@gmail.com>
@@ -17,10 +17,9 @@ import { PickingId } from '../../../../mol-geo/geometry/picking';
 import { LocationIterator } from '../../../../mol-geo/util/location-iterator';
 import { VisualContext } from '../../../../mol-repr/visual';
 import { Theme } from '../../../../mol-theme/theme';
-import { StructureGroup } from '../../../../mol-repr/structure/units-visual';
 import { Spheres } from '../../../../mol-geo/geometry/spheres/spheres';
 import { SpheresBuilder } from '../../../../mol-geo/geometry/spheres/spheres-builder';
-import { isTrace, isH } from './common';
+import { isTrace, isH, StructureGroup } from './common';
 import { Sphere3D } from '../../../../mol-math/geometry';
 
 // avoiding namespace lookup improved performance in Chrome (Aug 2020)
@@ -93,16 +92,18 @@ export function createElementSphereMesh(ctx: VisualContext, unit: Unit, structur
         addSphere(builderState, v, size * sizeFactor, detail);
     }
 
+    const oldBoundingSphere = mesh ? Sphere3D.clone(mesh.boundingSphere) : undefined;
+    const m = MeshBuilder.getMesh(builderState);
+    if (count === 0) return m;
+
     // re-use boundingSphere if it has not changed much
     let boundingSphere: Sphere3D;
     Vec3.scale(center, center, 1 / count);
-    if (mesh && Vec3.distance(center, mesh.boundingSphere.center) / mesh.boundingSphere.radius < 1.0) {
-        boundingSphere = Sphere3D.clone(mesh.boundingSphere);
+    if (oldBoundingSphere && Vec3.distance(center, oldBoundingSphere.center) / oldBoundingSphere.radius < 1.0) {
+        boundingSphere = oldBoundingSphere;
     } else {
         boundingSphere = Sphere3D.expand(Sphere3D(), (childUnit ?? unit).boundary.sphere, maxSize * sizeFactor + 0.05);
     }
-
-    const m = MeshBuilder.getMesh(builderState);
     m.setBoundingSphere(boundingSphere);
 
     return m;
@@ -144,16 +145,18 @@ export function createElementSphereImpostor(ctx: VisualContext, unit: Unit, stru
         if (size > maxSize) maxSize = size;
     }
 
+    const oldBoundingSphere = spheres ? Sphere3D.clone(spheres.boundingSphere) : undefined;
+    const s = builder.getSpheres();
+    if (count === 0) return s;
+
     // re-use boundingSphere if it has not changed much
     let boundingSphere: Sphere3D;
     Vec3.scale(center, center, 1 / count);
-    if (spheres && Vec3.distance(center, spheres.boundingSphere.center) / spheres.boundingSphere.radius < 1.0) {
-        boundingSphere = Sphere3D.clone(spheres.boundingSphere);
+    if (oldBoundingSphere && Vec3.distance(center, oldBoundingSphere.center) / oldBoundingSphere.radius < 1.0) {
+        boundingSphere = oldBoundingSphere;
     } else {
         boundingSphere = Sphere3D.expand(Sphere3D(), (childUnit ?? unit).boundary.sphere, maxSize * props.sizeFactor + 0.05);
     }
-
-    const s = builder.getSpheres();
     s.setBoundingSphere(boundingSphere);
 
     return s;
@@ -165,8 +168,9 @@ export function eachElement(loci: Loci, structureGroup: StructureGroup, apply: (
     const { structure, group } = structureGroup;
     if (!Structure.areEquivalent(loci.structure, structure)) return false;
     const elementCount = group.elements.length;
+    const { unitIndexMap } = group;
     for (const e of loci.elements) {
-        const unitIdx = group.unitIndexMap.get(e.unit.id);
+        const unitIdx = unitIndexMap.get(e.unit.id);
         if (unitIdx !== undefined) {
             const offset = unitIdx * elementCount; // to target unit instance
             if (Interval.is(e.indices)) {

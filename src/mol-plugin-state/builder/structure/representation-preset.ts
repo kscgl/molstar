@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -37,11 +37,14 @@ export namespace StructureRepresentationPresetProvider {
 
     export const CommonParams = {
         ignoreHydrogens: PD.Optional(PD.Boolean(false)),
+        ignoreLight: PD.Optional(PD.Boolean(false)),
         quality: PD.Optional(PD.Select<VisualQuality>('auto', VisualQualityOptions)),
         theme: PD.Optional(PD.Group({
             globalName: PD.Optional(PD.Text<ColorTheme.BuiltIn>('')),
+            globalColorParams: PD.Optional(PD.Value<any>({}, { isHidden: true })),
             carbonColor: PD.Optional(PD.Select('chain-id', PD.arrayToOptions(['chain-id', 'operator-name', 'element-symbol'] as const))),
             symmetryColor: PD.Optional(PD.Text<ColorTheme.BuiltIn>('')),
+            symmetryColorParams: PD.Optional(PD.Value<any>({}, { isHidden: true })),
             focus: PD.Optional(PD.Group({
                 name: PD.Optional(PD.Text<ColorTheme.BuiltIn>('')),
                 params: PD.Optional(PD.Value<ColorTheme.BuiltInParams<ColorTheme.BuiltIn>>({} as any))
@@ -68,18 +71,22 @@ export namespace StructureRepresentationPresetProvider {
         const typeParams = {
             quality: plugin.managers.structure.component.state.options.visualQuality,
             ignoreHydrogens: !plugin.managers.structure.component.state.options.showHydrogens,
+            ignoreLight: plugin.managers.structure.component.state.options.ignoreLight,
         };
         if (params.quality && params.quality !== 'auto') typeParams.quality = params.quality;
         if (params.ignoreHydrogens !== void 0) typeParams.ignoreHydrogens = !!params.ignoreHydrogens;
+        if (params.ignoreLight !== void 0) typeParams.ignoreLight = !!params.ignoreLight;
         const color: ColorTheme.BuiltIn | undefined = params.theme?.globalName ? params.theme?.globalName : void 0;
         const ballAndStickColor: ColorTheme.BuiltInParams<'element-symbol'> = params.theme?.carbonColor !== undefined
-            ? { carbonColor: getCarbonColorParams(params.theme?.carbonColor) }
-            : { };
+            ? { carbonColor: getCarbonColorParams(params.theme?.carbonColor), ...params.theme?.globalColorParams }
+            : { ...params.theme?.globalColorParams };
         const symmetryColor: ColorTheme.BuiltIn | undefined = structure && params.theme?.symmetryColor
             ? isSymmetry(structure) ? params.theme?.symmetryColor : color
             : color;
+        const symmetryColorParams = params.theme?.symmetryColorParams ? { ...params.theme?.globalColorParams, ...params.theme?.symmetryColorParams } : { ...params.theme?.globalColorParams };
+        const globalColorParams = params.theme?.globalColorParams ? { ...params.theme?.globalColorParams } : undefined;
 
-        return { update, builder, color, symmetryColor, typeParams, ballAndStickColor };
+        return { update, builder, color, symmetryColor, symmetryColorParams, globalColorParams, typeParams, ballAndStickColor };
     }
 
     export function updateFocusRepr<T extends ColorTheme.BuiltIn>(plugin: PluginContext, structure: Structure, themeName: T | undefined, themeParams: ColorTheme.BuiltInParams<T> | undefined) {
@@ -137,7 +144,7 @@ const empty = StructureRepresentationPresetProvider({
     id: 'preset-structure-representation-empty',
     display: { name: 'Empty', description: 'Removes all existing representations.' },
     async apply(ref, params, plugin) {
-        return {  };
+        return { };
     }
 });
 
@@ -174,18 +181,18 @@ const polymerAndLigand = StructureRepresentationPresetProvider({
         const waterType = (components.water?.obj?.data?.elementCount || 0) > 50_000 ? 'line' : 'ball-and-stick';
         const lipidType = (components.lipid?.obj?.data?.elementCount || 0) > 20_000 ? 'line' : 'ball-and-stick';
 
-        const { update, builder, typeParams, color, symmetryColor, ballAndStickColor } = reprBuilder(plugin, params, structure);
+        const { update, builder, typeParams, color, symmetryColor, symmetryColorParams, globalColorParams, ballAndStickColor } = reprBuilder(plugin, params, structure);
 
         const representations = {
-            polymer: builder.buildRepresentation(update, components.polymer, { type: 'cartoon', typeParams: { ...typeParams, ...cartoonProps }, color: symmetryColor }, { tag: 'polymer' }),
+            polymer: builder.buildRepresentation(update, components.polymer, { type: 'cartoon', typeParams: { ...typeParams, ...cartoonProps }, color: symmetryColor, colorParams: symmetryColorParams }, { tag: 'polymer' }),
             ligand: builder.buildRepresentation(update, components.ligand, { type: 'ball-and-stick', typeParams, color, colorParams: ballAndStickColor }, { tag: 'ligand' }),
             nonStandard: builder.buildRepresentation(update, components.nonStandard, { type: 'ball-and-stick', typeParams, color, colorParams: ballAndStickColor }, { tag: 'non-standard' }),
             branchedBallAndStick: builder.buildRepresentation(update, components.branched, { type: 'ball-and-stick', typeParams: { ...typeParams, alpha: 0.3 }, color, colorParams: ballAndStickColor }, { tag: 'branched-ball-and-stick' }),
-            branchedSnfg3d: builder.buildRepresentation(update, components.branched, { type: 'carbohydrate', typeParams, color }, { tag: 'branched-snfg-3d' }),
-            water: builder.buildRepresentation(update, components.water, { type: waterType, typeParams: { ...typeParams, alpha: 0.6 }, color, colorParams: { carbonColor: { name: 'element-symbol', params: {} } } }, { tag: 'water' }),
-            ion: builder.buildRepresentation(update, components.ion, { type: 'ball-and-stick', typeParams, color, colorParams: { carbonColor: { name: 'element-symbol', params: {} } } }, { tag: 'ion' }),
-            lipid: builder.buildRepresentation(update, components.lipid, { type: lipidType, typeParams: { ...typeParams, alpha: 0.6 }, color, colorParams: { carbonColor: { name: 'element-symbol', params: {} } } }, { tag: 'lipid' }),
-            coarse: builder.buildRepresentation(update, components.coarse, { type: 'spacefill', typeParams, color: color || 'chain-id' }, { tag: 'coarse' })
+            branchedSnfg3d: builder.buildRepresentation(update, components.branched, { type: 'carbohydrate', typeParams, color, colorParams: globalColorParams }, { tag: 'branched-snfg-3d' }),
+            water: builder.buildRepresentation(update, components.water, { type: waterType, typeParams: { ...typeParams, alpha: 0.6, visuals: waterType === 'line' ? ['intra-bond', 'element-point'] : undefined }, color, colorParams: { carbonColor: { name: 'element-symbol', params: {} }, ...globalColorParams } }, { tag: 'water' }),
+            ion: builder.buildRepresentation(update, components.ion, { type: 'ball-and-stick', typeParams, color, colorParams: { carbonColor: { name: 'element-symbol', params: {} }, ...globalColorParams } }, { tag: 'ion' }),
+            lipid: builder.buildRepresentation(update, components.lipid, { type: lipidType, typeParams: { ...typeParams, alpha: 0.6, visuals: lipidType === 'line' ? ['intra-bond'] : undefined }, color, colorParams: { carbonColor: { name: 'element-symbol', params: {} }, ...globalColorParams } }, { tag: 'lipid' }),
+            coarse: builder.buildRepresentation(update, components.coarse, { type: 'spacefill', typeParams, color: color || 'chain-id', colorParams: globalColorParams }, { tag: 'coarse' })
         };
 
         await update.commit({ revertOnError: false });
@@ -220,11 +227,11 @@ const proteinAndNucleic = StructureRepresentationPresetProvider({
             smoothness: structure.isCoarseGrained ? 1.0 : 1.5,
         };
 
-        const { update, builder, typeParams, symmetryColor } = reprBuilder(plugin, params, structure);
+        const { update, builder, typeParams, symmetryColor, symmetryColorParams } = reprBuilder(plugin, params, structure);
 
         const representations = {
-            protein: builder.buildRepresentation(update, components.protein, { type: 'cartoon', typeParams: { ...typeParams, ...cartoonProps }, color: symmetryColor }, { tag: 'protein' }),
-            nucleic: builder.buildRepresentation(update, components.nucleic, { type: 'gaussian-surface', typeParams: { ...typeParams, ...gaussianProps }, color: symmetryColor }, { tag: 'nucleic' })
+            protein: builder.buildRepresentation(update, components.protein, { type: 'cartoon', typeParams: { ...typeParams, ...cartoonProps }, color: symmetryColor, colorParams: symmetryColorParams }, { tag: 'protein' }),
+            nucleic: builder.buildRepresentation(update, components.nucleic, { type: 'gaussian-surface', typeParams: { ...typeParams, ...gaussianProps }, color: symmetryColor, colorParams: symmetryColorParams }, { tag: 'nucleic' })
         };
 
         await update.commit({ revertOnError: true });
@@ -260,23 +267,23 @@ const coarseSurface = StructureRepresentationPresetProvider({
                 smoothness: 1,
                 visuals: ['structure-gaussian-surface-mesh']
             });
-        } else if(size === Structure.Size.Huge) {
+        } else if (size === Structure.Size.Huge) {
             Object.assign(gaussianProps, {
                 radiusOffset: structure.isCoarseGrained ? 2 : 0,
                 smoothness: 1,
             });
-        } else if(structure.isCoarseGrained) {
+        } else if (structure.isCoarseGrained) {
             Object.assign(gaussianProps, {
                 radiusOffset: 2,
                 smoothness: 1,
             });
         }
 
-        const { update, builder, typeParams, symmetryColor } = reprBuilder(plugin, params, structure);
+        const { update, builder, typeParams, symmetryColor, symmetryColorParams } = reprBuilder(plugin, params, structure);
 
         const representations = {
-            polymer: builder.buildRepresentation(update, components.polymer, { type: 'gaussian-surface', typeParams: { ...typeParams, ...gaussianProps }, color: symmetryColor }, { tag: 'polymer' }),
-            lipid: builder.buildRepresentation(update, components.lipid, { type: 'gaussian-surface', typeParams: { ...typeParams, ...gaussianProps }, color: symmetryColor }, { tag: 'lipid' })
+            polymer: builder.buildRepresentation(update, components.polymer, { type: 'gaussian-surface', typeParams: { ...typeParams, ...gaussianProps }, color: symmetryColor, colorParams: symmetryColorParams }, { tag: 'polymer' }),
+            lipid: builder.buildRepresentation(update, components.lipid, { type: 'gaussian-surface', typeParams: { ...typeParams, ...gaussianProps }, color: symmetryColor, colorParams: symmetryColorParams }, { tag: 'lipid' })
         };
 
         await update.commit({ revertOnError: true });
@@ -306,10 +313,10 @@ const polymerCartoon = StructureRepresentationPresetProvider({
             sizeFactor: structure.isCoarseGrained ? 0.8 : 0.2
         };
 
-        const { update, builder, typeParams, symmetryColor } = reprBuilder(plugin, params, structure);
+        const { update, builder, typeParams, symmetryColor, symmetryColorParams } = reprBuilder(plugin, params, structure);
 
         const representations = {
-            polymer: builder.buildRepresentation(update, components.polymer, { type: 'cartoon', typeParams: { ...typeParams, ...cartoonProps }, color: symmetryColor }, { tag: 'polymer' })
+            polymer: builder.buildRepresentation(update, components.polymer, { type: 'cartoon', typeParams: { ...typeParams, ...cartoonProps }, color: symmetryColor, colorParams: symmetryColorParams }, { tag: 'polymer' })
         };
 
         await update.commit({ revertOnError: true });
@@ -364,9 +371,9 @@ const atomicDetail = StructureRepresentationPresetProvider({
             });
         }
 
-        const { update, builder, typeParams, color, ballAndStickColor } = reprBuilder(plugin, params, structure);
+        const { update, builder, typeParams, color, ballAndStickColor, globalColorParams } = reprBuilder(plugin, params, structure);
         const colorParams = lowResidueElementRatio && !bondsGiven
-            ? { carbonColor: { name: 'element-symbol', params: {} } }
+            ? { carbonColor: { name: 'element-symbol', params: {} }, ...globalColorParams }
             : ballAndStickColor;
 
         const representations = {
@@ -374,11 +381,46 @@ const atomicDetail = StructureRepresentationPresetProvider({
         };
         if (showCarbohydrateSymbol) {
             Object.assign(representations, {
-                snfg3d: builder.buildRepresentation(update, components.branched, { type: 'carbohydrate', typeParams: { ...typeParams, alpha: 0.4, visuals: ['carbohydrate-symbol'] }, color }, { tag: 'snfg-3d' }),
+                snfg3d: builder.buildRepresentation(update, components.branched, { type: 'carbohydrate', typeParams: { ...typeParams, alpha: 0.4, visuals: ['carbohydrate-symbol'] }, color, colorParams: globalColorParams }, { tag: 'snfg-3d' }),
             });
         }
 
         await update.commit({ revertOnError: true });
+        await updateFocusRepr(plugin, structure, params.theme?.focus?.name ?? color, params.theme?.focus?.params ?? colorParams);
+
+        return { components, representations };
+    }
+});
+
+const illustrative = StructureRepresentationPresetProvider({
+    id: 'preset-structure-representation-illustrative',
+    display: {
+        name: 'Illustrative', group: 'Miscellaneous',
+        description: '...'
+    },
+    params: () => ({
+        ...CommonParams,
+        showCarbohydrateSymbol: PD.Boolean(false)
+    }),
+    async apply(ref, params, plugin) {
+        const structureCell = StateObjectRef.resolveAndCheck(plugin.state.data, ref);
+        if (!structureCell) return {};
+
+        const components = {
+            all: await presetStaticComponent(plugin, structureCell, 'all'),
+            branched: undefined
+        };
+
+        const structure = structureCell.obj!.data;
+
+        const { update, builder, typeParams, color } = reprBuilder(plugin, params, structure);
+
+        const representations = {
+            all: builder.buildRepresentation(update, components.all, { type: 'spacefill', typeParams: { ...typeParams, ignoreLight: true }, color: 'illustrative' }, { tag: 'all' }),
+        };
+        await update.commit({ revertOnError: true });
+        await updateFocusRepr(plugin, structure, params.theme?.focus?.name ?? color, params.theme?.focus?.params);
+
         return { components, representations };
     }
 });
@@ -398,6 +440,7 @@ export const PresetStructureRepresentations = {
     'polymer-cartoon': polymerCartoon,
     'polymer-and-ligand': polymerAndLigand,
     'protein-and-nucleic': proteinAndNucleic,
-    'coarse-surface': coarseSurface
+    'coarse-surface': coarseSurface,
+    illustrative,
 };
 export type PresetStructureRepresentations = typeof PresetStructureRepresentations;

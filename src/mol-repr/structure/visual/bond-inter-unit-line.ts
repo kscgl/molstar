@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2020-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2020-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -32,9 +32,13 @@ function setRefPosition(pos: Vec3, structure: Structure, unit: Unit.Atomic, inde
 function createInterUnitBondLines(ctx: VisualContext, structure: Structure, theme: Theme, props: PD.Values<InterUnitBondLineParams>, lines?: Lines) {
     const bonds = structure.interUnitBonds;
     const { edgeCount, edges } = bonds;
-    const { sizeFactor, aromaticBonds } = props;
 
     if (!edgeCount) return Lines.createEmpty(lines);
+
+    const { sizeFactor, aromaticBonds, multipleBonds } = props;
+
+    const mbOff = multipleBonds === 'off';
+    const mbSymmetric = multipleBonds === 'symmetric';
 
     const ref = Vec3();
     const loc = StructureElement.Location.create();
@@ -71,17 +75,19 @@ function createInterUnitBondLines(ctx: VisualContext, structure: Structure, them
             const o = edges[edgeIndex].props.order;
             const f = BitFlags.create(edges[edgeIndex].props.flag);
             if (BondType.is(f, BondType.Flag.MetallicCoordination) || BondType.is(f, BondType.Flag.HydrogenBond)) {
-                // show metall coordinations and hydrogen bonds with dashed cylinders
+                // show metallic coordinations and hydrogen bonds with dashed cylinders
                 return LinkStyle.Dashed;
             } else if (o === 3) {
-                return LinkStyle.Triple;
-            }else if (aromaticBonds && BondType.is(f, BondType.Flag.Aromatic)) {
+                return mbOff ? LinkStyle.Solid :
+                    mbSymmetric ? LinkStyle.Triple :
+                        LinkStyle.OffsetTriple;
+            } else if (aromaticBonds && BondType.is(f, BondType.Flag.Aromatic)) {
                 return LinkStyle.Aromatic;
-            } else if (o === 2) {
-                return LinkStyle.Double;
             }
 
-            return LinkStyle.Solid;
+            return (o !== 2 || mbOff) ? LinkStyle.Solid :
+                mbSymmetric ? LinkStyle.Double :
+                    LinkStyle.OffsetDouble;
         },
         radius: (edgeIndex: number) => {
             const b = edges[edgeIndex];
@@ -97,11 +103,15 @@ function createInterUnitBondLines(ctx: VisualContext, structure: Structure, them
         ignore: makeInterBondIgnoreTest(structure, props)
     };
 
-    const l = createLinkLines(ctx, builderProps, props, lines);
+    const { lines: l, boundingSphere } = createLinkLines(ctx, builderProps, props, lines);
 
-    const { child } = structure;
-    const sphere = Sphere3D.expand(Sphere3D(), (child ?? structure).boundary.sphere, 1 * props.sizeFactor);
-    l.setBoundingSphere(sphere);
+    if (boundingSphere) {
+        l.setBoundingSphere(boundingSphere);
+    } else if (l.lineCount > 0) {
+        const { child } = structure;
+        const sphere = Sphere3D.expand(Sphere3D(), (child ?? structure).boundary.sphere, 1 * sizeFactor);
+        l.setBoundingSphere(sphere);
+    }
 
     return l;
 }
@@ -120,16 +130,25 @@ export function InterUnitBondLineVisual(materialId: number): ComplexVisual<Inter
         createLocationIterator: BondIterator.fromStructure,
         getLoci: getInterBondLoci,
         eachLocation: eachInterBond,
-        setUpdateState: (state: VisualUpdateState, newProps: PD.Values<InterUnitBondLineParams>, currentProps: PD.Values<InterUnitBondLineParams>) => {
+        setUpdateState: (state: VisualUpdateState, newProps: PD.Values<InterUnitBondLineParams>, currentProps: PD.Values<InterUnitBondLineParams>, newTheme: Theme, currentTheme: Theme, newStructure: Structure, currentStructure: Structure) => {
             state.createGeometry = (
                 newProps.sizeFactor !== currentProps.sizeFactor ||
                 newProps.linkScale !== currentProps.linkScale ||
                 newProps.linkSpacing !== currentProps.linkSpacing ||
+                newProps.aromaticDashCount !== currentProps.aromaticDashCount ||
                 newProps.dashCount !== currentProps.dashCount ||
                 newProps.ignoreHydrogens !== currentProps.ignoreHydrogens ||
                 !arrayEqual(newProps.includeTypes, currentProps.includeTypes) ||
-                !arrayEqual(newProps.excludeTypes, currentProps.excludeTypes)
+                !arrayEqual(newProps.excludeTypes, currentProps.excludeTypes) ||
+                newProps.multipleBonds !== currentProps.multipleBonds
             );
+
+            if (newStructure.interUnitBonds !== currentStructure.interUnitBonds) {
+                state.createGeometry = true;
+                state.updateTransform = true;
+                state.updateColor = true;
+                state.updateSize = true;
+            }
         }
     }, materialId);
 }

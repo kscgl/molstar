@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  * @author David Sehnal <david.sehnal@gmail.com>
@@ -26,12 +26,12 @@ export class DownloadScreenshotControls extends PluginUIComponent<{ close: () =>
     state: ImageControlsState = {
         showPreview: true,
         isDisabled: false
-    } as ImageControlsState
+    } as ImageControlsState;
 
     private download = () => {
         this.plugin.helpers.viewportScreenshot?.download();
         this.props.close();
-    }
+    };
 
     private copy = async () => {
         try {
@@ -44,12 +44,12 @@ export class DownloadScreenshotControls extends PluginUIComponent<{ close: () =>
         } catch {
             return this.copyImg();
         }
-    }
+    };
 
     private copyImg = async () => {
         const src = await this.plugin.helpers.viewportScreenshot?.getImageDataUri();
         this.setState({ imageData: src });
-    }
+    };
 
     componentDidMount() {
         this.subscribe(this.plugin.state.data.behaviors.isUpdating, v => {
@@ -58,13 +58,14 @@ export class DownloadScreenshotControls extends PluginUIComponent<{ close: () =>
     }
 
     componentWillUnmount() {
+        super.componentWillUnmount();
         this.setState({ imageData: void 0 });
     }
 
     open = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || !e.target.files![0]) return;
         PluginCommands.State.Snapshots.OpenFile(this.plugin, { file: e.target.files![0] });
-    }
+    };
 
     render() {
         const hasClipboardApi = !!(navigator.clipboard as any)?.write;
@@ -95,18 +96,21 @@ export class DownloadScreenshotControls extends PluginUIComponent<{ close: () =>
 }
 
 function ScreenshotParams({ plugin, isDisabled }: { plugin: PluginContext, isDisabled: boolean }) {
-    const helper = plugin.helpers.viewportScreenshot!;
-    const values = useBehavior(helper.behaviors.values);
+    const helper = plugin.helpers.viewportScreenshot;
+
+    const values = useBehavior(helper?.behaviors.values);
+    if (!helper) return null;
 
     return <ParameterControls params={helper.params} values={values} onChangeValues={v => helper.behaviors.values.next(v)} isDisabled={isDisabled} />;
 }
 
 function CropControls({ plugin }: { plugin: PluginContext }) {
     const helper = plugin.helpers.viewportScreenshot;
-    const cropParams = useBehavior(helper?.behaviors.cropParams!);
+
+    const cropParams = useBehavior(helper?.behaviors.cropParams);
     useBehavior(helper?.behaviors.relativeCrop);
 
-    if (!helper) return null;
+    if (!helper || !cropParams) return null;
 
     return <div style={{ width: '100%', height: '24px', marginTop: '8px' }}>
         <ToggleButton icon={CropOrginalSvg} title='Auto-crop' inline isSelected={cropParams.auto}

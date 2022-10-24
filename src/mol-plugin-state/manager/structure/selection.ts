@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -22,6 +22,7 @@ import { PluginStateObject as PSO } from '../../objects';
 import { UUID } from '../../../mol-util';
 import { StructureRef } from './hierarchy-state';
 import { Boundary } from '../../../mol-math/geometry/boundary';
+import { iterableToArray } from '../../../mol-data/util';
 import {Color} from '../../../mol-util/color';
 
 interface StructureSelectionManagerState {
@@ -45,9 +46,9 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
             remove: this.ev<StructureElement.Loci>(),
             clear: this.ev<undefined>()
         }
-    }
+    };
 
-    private referenceLoci: StructureElement.Loci | undefined
+    private referenceLoci: StructureElement.Loci | undefined;
 
     get entries() { return this.state.entries; }
     get additionsHistory() { return this.state.additionsHistory; }
@@ -176,7 +177,7 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
             }
         }
 
-        this.events.additionsHistoryUpdated.next();
+        this.events.additionsHistoryUpdated.next(void 0);
     }
 
     private tryAddHistory(loci: StructureElement.Loci) {
@@ -195,7 +196,7 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
             // move to top
             arrayRemoveAtInPlace(this.additionsHistory, idx);
             this.additionsHistory.unshift(entry);
-            this.events.additionsHistoryUpdated.next();
+            this.events.additionsHistoryUpdated.next(void 0);
             return;
         }
 
@@ -205,13 +206,13 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
         this.additionsHistory.unshift({ id: UUID.create22(), loci, label });
         if (this.additionsHistory.length > HISTORY_CAPACITY) this.additionsHistory.pop();
 
-        this.events.additionsHistoryUpdated.next();
+        this.events.additionsHistoryUpdated.next(void 0);
     }
 
     private clearHistory() {
         if (this.state.additionsHistory.length !== 0) {
             this.state.additionsHistory = [];
-            this.events.additionsHistoryUpdated.next();
+            this.events.additionsHistoryUpdated.next(void 0);
         }
     }
 
@@ -226,7 +227,7 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
             this.modifyHistory(e, 'remove');
         }
         if (historyEntryToRemove.length !== 0) {
-            this.events.additionsHistoryUpdated.next();
+            this.events.additionsHistoryUpdated.next(void 0);
         }
     }
 
@@ -240,12 +241,11 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
                 this.referenceLoci = undefined;
             }
             this.state.stats = void 0;
-            this.events.changed.next();
+            this.events.changed.next(void 0);
         }
     }
 
     private onUpdate(ref: string, oldObj: PSO.Molecule.Structure | undefined, obj: PSO.Molecule.Structure) {
-
         // no change to structure
         if (oldObj === obj || oldObj?.data === obj.data) return;
 
@@ -253,7 +253,9 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
         const cell = this.plugin.helpers.substructureParent.get(obj.data, true);
         if (!cell) return;
 
-        ref = cell.transform.ref;
+        // only need to update the root
+        if (ref !== cell.transform.ref) return;
+
         if (!this.entries.has(ref)) return;
 
         // use structure from last decorator as reference
@@ -277,7 +279,7 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
                     changedHistory = true;
                 }
             }
-            if (changedHistory) this.events.additionsHistoryUpdated.next();
+            if (changedHistory) this.events.additionsHistoryUpdated.next(void 0);
         } else {
             // clear the selection for ref
             this.entries.set(ref, new SelectionEntry(StructureElement.Loci(structure, [])));
@@ -289,7 +291,7 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
             this.clearHistoryForStructure(structure);
 
             this.state.stats = void 0;
-            this.events.changed.next();
+            this.events.changed.next(void 0);
         }
     }
 
@@ -306,8 +308,8 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
         }
         this.referenceLoci = undefined;
         this.state.stats = void 0;
-        this.events.changed.next();
-        this.events.loci.clear.next();
+        this.events.changed.next(void 0);
+        this.events.loci.clear.next(void 0);
         this.clearHistory();
         return selections;
     }
@@ -406,14 +408,8 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
     }
 
     getPrincipalAxes(): PrincipalAxes {
-        const elementCount = this.elementCount();
-        const positions = new Float32Array(3 * elementCount);
-        let offset = 0;
-        this.entries.forEach(v => {
-            StructureElement.Loci.toPositionsArray(v.selection, positions, offset);
-            offset += StructureElement.Loci.size(v.selection) * 3;
-        });
-        return PrincipalAxes.ofPositions(positions);
+        const values = iterableToArray(this.entries.values());
+        return StructureElement.Loci.getPrincipalAxesMany(values.map(v => v.selection));
     }
 
     modify(modifier: StructureSelectionModifier, loci: Loci) {
@@ -427,7 +423,7 @@ export class StructureSelectionManager extends StatefulPluginComponent<Structure
 
         if (changed) {
             this.state.stats = void 0;
-            this.events.changed.next();
+            this.events.changed.next(void 0);
         }
     }
 

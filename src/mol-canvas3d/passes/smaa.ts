@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2020-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -11,7 +11,7 @@ import { ShaderCode } from '../../mol-gl/shader-code';
 import { WebGLContext } from '../../mol-gl/webgl/context';
 import { createComputeRenderItem } from '../../mol-gl/webgl/render-item';
 import { RenderTarget } from '../../mol-gl/webgl/render-target';
-import { createTexture, loadImageTexture, Texture } from '../../mol-gl/webgl/texture';
+import { loadImageTexture, Texture } from '../../mol-gl/webgl/texture';
 import { Vec2, Vec4 } from '../../mol-math/linear-algebra';
 import { ValueCell } from '../../mol-util';
 import { ParamDefinition as PD } from '../../mol-util/param-definition';
@@ -22,21 +22,21 @@ import { weights_frag } from '../../mol-gl/shader/smaa/weights.frag';
 import { edges_vert } from '../../mol-gl/shader/smaa/edges.vert';
 import { edges_frag } from '../../mol-gl/shader/smaa/edges.frag';
 import { Viewport } from '../camera/util';
-import { isDebugMode } from '../../mol-util/debug';
+import { isDebugMode, isTimingMode } from '../../mol-util/debug';
 
 export const SmaaParams = {
-    edgeThreshold:PD.Numeric(0.1, { min: 0.05, max: 0.15, step: 0.01 }),
-    maxSearchSteps:PD.Numeric(16, { min: 0, max: 32, step: 1 }),
+    edgeThreshold: PD.Numeric(0.1, { min: 0.05, max: 0.15, step: 0.01 }),
+    maxSearchSteps: PD.Numeric(16, { min: 0, max: 32, step: 1 }),
 };
 export type SmaaProps = PD.Values<typeof SmaaParams>
 
 export class SmaaPass {
-    private readonly edgesTarget: RenderTarget
-    private readonly weightsTarget: RenderTarget
+    private readonly edgesTarget: RenderTarget;
+    private readonly weightsTarget: RenderTarget;
 
-    private readonly edgesRenderable: EdgesRenderable
-    private readonly weightsRenderable: WeightsRenderable
-    private readonly blendRenderable: BlendRenderable
+    private readonly edgesRenderable: EdgesRenderable;
+    private readonly weightsRenderable: WeightsRenderable;
+    private readonly blendRenderable: BlendRenderable;
 
     private _supported = false;
     get supported() {
@@ -71,9 +71,10 @@ export class SmaaPass {
         state.depthMask(false);
 
         const { x, y, width, height } = viewport;
-        gl.viewport(x, y, width, height);
-        gl.scissor(x, y, width, height);
+        state.viewport(x, y, width, height);
+        state.scissor(x, y, width, height);
 
+        state.colorMask(true, true, true, true);
         state.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
@@ -120,6 +121,7 @@ export class SmaaPass {
     }
 
     render(viewport: Viewport, target: RenderTarget | undefined) {
+        if (isTimingMode) this.webgl.timer.mark('SmaaPass.render');
         this.edgesTarget.bind();
         this.updateState(viewport);
         this.edgesRenderable.render();
@@ -135,8 +137,8 @@ export class SmaaPass {
         }
         this.updateState(viewport);
         this.blendRenderable.render();
+        if (isTimingMode) this.webgl.timer.markEnd('SmaaPass.render');
     }
-
 }
 
 //
@@ -190,8 +192,8 @@ function getWeightsRenderable(ctx: WebGLContext, edgesTexture: Texture): Weights
     const width = edgesTexture.getWidth();
     const height = edgesTexture.getHeight();
 
-    const areaTexture = createTexture(ctx.gl, ctx.extensions, 'image-uint8', 'rgb', 'ubyte', 'linear');
-    const searchTexture = createTexture(ctx.gl, ctx.extensions, 'image-uint8', 'rgba', 'ubyte', 'nearest');
+    const areaTexture = ctx.resources.texture('image-uint8', 'rgb', 'ubyte', 'linear');
+    const searchTexture = ctx.resources.texture('image-uint8', 'rgba', 'ubyte', 'nearest');
 
     const values: Values<typeof WeightsSchema> = {
         ...QuadValues,
@@ -201,7 +203,7 @@ function getWeightsRenderable(ctx: WebGLContext, edgesTexture: Texture): Weights
         uTexSizeInv: ValueCell.create(Vec2.create(1 / width, 1 / height)),
         uViewport: ValueCell.create(Vec4()),
 
-        dMaxSearchSteps: ValueCell.create(8),
+        dMaxSearchSteps: ValueCell.create(16),
     };
 
     // Note: loading image textures requires `HTMLImageElement` to be available

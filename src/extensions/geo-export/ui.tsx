@@ -60,6 +60,8 @@ export class GeometryExporterUI extends CollapsableControls<{}, State> {
     }
 
     componentDidMount() {
+        if (!this.plugin.canvas3d) return;
+
         const merged = merge(
             this.controls.behaviors.params,
             this.plugin.canvas3d!.reprCount
@@ -71,6 +73,7 @@ export class GeometryExporterUI extends CollapsableControls<{}, State> {
     }
 
     componentWillUnmount() {
+        super.componentWillUnmount();
         this._controls?.dispose();
         this._controls = void 0;
     }
@@ -79,19 +82,18 @@ export class GeometryExporterUI extends CollapsableControls<{}, State> {
         try {
             this.setState({ busy: true });
             const data = await this.controls.exportGeometry();
-            this.setState({ busy: false });
-
             download(data.blob, data.filename);
-        } catch {
+        } catch (e) {
+            console.error(e);
+        } finally {
             this.setState({ busy: false });
         }
-    }
+    };
 
     viewInAR = async () => {
         try {
             this.setState({ busy: true });
             const data = await this.controls.exportGeometry();
-            this.setState({ busy: false });
             const a = document.createElement('a');
             a.rel = 'ar';
             a.href = URL.createObjectURL(data.blob);
@@ -100,8 +102,10 @@ export class GeometryExporterUI extends CollapsableControls<{}, State> {
             a.appendChild(document.createElement('img'));
             setTimeout(() => URL.revokeObjectURL(a.href), 4E4); // 40s
             setTimeout(() => a.dispatchEvent(new MouseEvent('click')));
-        } catch {
+        } catch (e) {
+            console.error(e);
+        } finally {
             this.setState({ busy: false });
         }
-    }
+    };
 }

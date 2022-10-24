@@ -7,14 +7,15 @@
 import * as React from 'react';
 import { Binding } from '../../mol-util/binding';
 import { PluginUIComponent } from '../base';
-import { StateTransformer, StateSelection } from '../../mol-state';
+import { StateTransformer, StateSelection, State } from '../../mol-state';
 import { SelectLoci } from '../../mol-plugin/behavior/dynamic/representation';
 import { FocusLoci } from '../../mol-plugin/behavior/dynamic/representation';
 import { Icon, ArrowDropDownSvg, ArrowRightSvg, CameraSvg } from '../controls/icons';
 import { Button } from '../controls/common';
+import { memoizeLatest } from '../../mol-util/memoize';
 
 function getBindingsList(bindings: { [k: string]: Binding }) {
-    return Object.keys(bindings).map(k => [k, bindings[k]] as [string, Binding]);
+    return Object.keys(bindings).map(k => [k, bindings[k]] as [string, Binding]).filter(b => Binding.isBinding(b[1]));
 }
 
 export class BindingsHelp extends React.PureComponent<{ bindings: { [k: string]: Binding } }> {
@@ -37,7 +38,7 @@ export class BindingsHelp extends React.PureComponent<{ bindings: { [k: string]:
     }
 }
 
-export class HelpText extends React.PureComponent {
+export class HelpText extends React.PureComponent<{ children?: any }> {
     render() {
         return <div className='msp-help-text'>
             <div>{this.props.children}</div>
@@ -45,11 +46,11 @@ export class HelpText extends React.PureComponent {
     }
 }
 
-export class HelpGroup extends React.PureComponent<{ header: string, initiallyExpanded?: boolean }, { isExpanded: boolean }> {
+export class HelpGroup extends React.PureComponent<{ children?: any, header: string, initiallyExpanded?: boolean }, { isExpanded: boolean }> {
     state = {
         header: this.props.header,
         isExpanded: !!this.props.initiallyExpanded
-    }
+    };
 
     toggleExpanded = () => this.setState({ isExpanded: !this.state.isExpanded });
 
@@ -77,19 +78,30 @@ export class ViewportHelpContent extends PluginUIComponent<{ selectOnly?: boolea
         this.subscribe(this.plugin.events.canvas3d.settingsUpdated, () => this.forceUpdate());
     }
 
-    render() {
-        const interactionBindings: { [k: string]: Binding } = {};
-        this.plugin.spec.behaviors.forEach(b => {
-            const { bindings } = b.defaultParams;
-            if (bindings) Object.assign(interactionBindings, bindings);
+    getInteractionBindings = memoizeLatest((cells: State.Cells) => {
+        let interactionBindings: { [k: string]: Binding } | undefined = void 0;
+
+        cells.forEach(c => {
+            const params = c.params?.values;
+            if (params?.bindings && Object.keys(params.bindings).length > 0) {
+                if (!interactionBindings) interactionBindings = { };
+                Object.assign(interactionBindings, params.bindings);
+            }
         });
+
+        return interactionBindings;
+    });
+
+    render() {
+        const interactionBindings = this.getInteractionBindings(this.plugin.state.behaviors.cells);
+
         return <>
             {(!this.props.selectOnly && this.plugin.canvas3d) && <HelpGroup key='trackball' header='Moving in 3D'>
                 <BindingsHelp bindings={this.plugin.canvas3d.props.trackball.bindings} />
             </HelpGroup>}
-            <HelpGroup key='interactions' header='Mouse Controls'>
+            {!!interactionBindings && <HelpGroup key='interactions' header='Mouse Controls'>
                 <BindingsHelp bindings={interactionBindings} />
-            </HelpGroup>
+            </HelpGroup>}
         </>;
     }
 }

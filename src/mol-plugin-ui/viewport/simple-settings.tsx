@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  * @author David Sehnal <david.sehnal@gmail.com>
@@ -8,8 +8,10 @@
 import { produce } from 'immer';
 import { Canvas3DParams, Canvas3DProps } from '../../mol-canvas3d/canvas3d';
 import { PluginCommands } from '../../mol-plugin/commands';
+import { PluginConfig } from '../../mol-plugin/config';
 import { StateTransform } from '../../mol-state';
 import { Color } from '../../mol-util/color';
+import { deepClone } from '../../mol-util/object';
 import { ParamDefinition as PD } from '../../mol-util/param-definition';
 import { ParamMapping } from '../../mol-util/param-mapping';
 import { Mutable } from '../../mol-util/type-helpers';
@@ -20,6 +22,8 @@ import { ViewportHelpContent } from './help';
 
 export class SimpleSettingsControl extends PluginUIComponent {
     componentDidMount() {
+        if (!this.plugin.canvas3d) return;
+
         this.subscribe(this.plugin.events.canvas3d.settingsUpdated, () => this.forceUpdate());
 
         this.subscribe(this.plugin.canvas3d!.camera.stateChanged, state => {
@@ -46,24 +50,20 @@ const LayoutOptions = {
 type LayoutOptions = keyof typeof LayoutOptions
 
 const SimpleSettingsParams = {
-    spin: PD.Group({
-        spin: Canvas3DParams.trackball.params.spin,
-        speed: Canvas3DParams.trackball.params.spinSpeed
-    }, { pivot: 'spin' }),
+    animate: Canvas3DParams.trackball.params.animate,
     camera: Canvas3DParams.camera,
     background: PD.Group({
         color: PD.Color(Color(0xFCFBF9), { label: 'Background', description: 'Custom background color' }),
-        transparent: PD.Boolean(false)
+        transparent: PD.Boolean(false),
+        style: Canvas3DParams.postprocessing.params.background,
     }, { pivot: 'color' }),
     lighting: PD.Group({
-        renderStyle: Canvas3DParams.renderer.params.style,
         occlusion: Canvas3DParams.postprocessing.params.occlusion,
         outline: Canvas3DParams.postprocessing.params.outline,
         fog: Canvas3DParams.cameraFog,
-    }, { pivot: 'renderStyle' }),
+    }, { isFlat: true }),
     clipping: PD.Group<any>({
         ...Canvas3DParams.cameraClipping.params,
-        ...(Canvas3DParams.renderer.params.clip as any).params as any
     }, { pivot: 'radius' }),
     layout: PD.MultiSelect([] as LayoutOptions[], PD.objectToOptions(LayoutOptions)),
 };
@@ -79,6 +79,13 @@ const SimpleSettingsMapping = ParamMapping({
             if (controls.bottom !== 'none') options.push(['log', LayoutOptions.log]);
             if (controls.left !== 'none') options.push(['left', LayoutOptions.left]);
             params.layout.options = options;
+        }
+        const bgStyles = ctx.config.get(PluginConfig.Background.Styles) || [];
+        if (bgStyles.length > 0) {
+            Object.assign(params.background.params.style, {
+                presets: deepClone(bgStyles),
+                isFlat: false, // so the presets menu is shown
+            });
         }
         return params;
     },
@@ -98,42 +105,37 @@ const SimpleSettingsMapping = ParamMapping({
 
         return {
             layout: props.layout,
-            spin: { spin: !!canvas.trackball.spin, speed: canvas.trackball.spinSpeed },
+            animate: canvas.trackball.animate,
             camera: canvas.camera,
             background: {
                 color: renderer.backgroundColor,
-                transparent: canvas.transparentBackground
+                transparent: canvas.transparentBackground,
+                style: canvas.postprocessing.background,
             },
             lighting: {
-                renderStyle: renderer.style,
                 occlusion: canvas.postprocessing.occlusion,
                 outline: canvas.postprocessing.outline,
-                fog: canvas.cameraFog
+                fog: canvas.cameraFog,
             },
             clipping: {
                 ...canvas.cameraClipping,
-                ...canvas.renderer.clip
             }
         };
     },
     update(s, props) {
         const canvas = props.canvas as Mutable<Canvas3DProps>;
-        canvas.trackball.spin = s.spin.spin;
-        canvas.trackball.spinSpeed = s.spin.speed;
+        canvas.trackball.animate = s.animate;
         canvas.camera = s.camera;
         canvas.transparentBackground = s.background.transparent;
         canvas.renderer.backgroundColor = s.background.color;
-        canvas.renderer.style = s.lighting.renderStyle;
         canvas.postprocessing.occlusion = s.lighting.occlusion;
         canvas.postprocessing.outline = s.lighting.outline;
+        canvas.postprocessing.background = s.background.style;
         canvas.cameraFog = s.lighting.fog;
         canvas.cameraClipping = {
             radius: s.clipping.radius,
             far: s.clipping.far,
-        };
-        canvas.renderer.clip = {
-            variant: s.clipping.variant,
-            objects: s.clipping.objects,
+            minNear: s.clipping.minNear,
         };
 
         props.layout = s.layout;

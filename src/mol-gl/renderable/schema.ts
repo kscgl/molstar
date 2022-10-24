@@ -1,7 +1,8 @@
 /**
- * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
+ * @author Gianluca Tomasello <giagitom@gmail.com>
  */
 
 import { ValueCell } from '../../mol-util';
@@ -36,6 +37,7 @@ export function splitValues(schema: RenderableSchema, values: RenderableValues) 
     const attributeValues: AttributeValues = {};
     const defineValues: DefineValues = {};
     const textureValues: TextureValues = {};
+    const materialTextureValues: TextureValues = {};
     const uniformValues: UniformValues = {};
     const materialUniformValues: UniformValues = {};
     const bufferedUniformValues: UniformValues = {};
@@ -44,7 +46,10 @@ export function splitValues(schema: RenderableSchema, values: RenderableValues) 
         if (spec.type === 'attribute') attributeValues[k] = values[k];
         if (spec.type === 'define') defineValues[k] = values[k];
         // check if k exists in values to exclude global textures
-        if (spec.type === 'texture' && values[k] !== undefined) textureValues[k] = values[k];
+        if (spec.type === 'texture' && values[k] !== undefined) {
+            if (spec.variant === 'material') materialTextureValues[k] = values[k];
+            else textureValues[k] = values[k];
+        }
         // check if k exists in values to exclude global uniforms
         if (spec.type === 'uniform' && values[k] !== undefined) {
             if (spec.variant === 'material') materialUniformValues[k] = values[k];
@@ -52,7 +57,7 @@ export function splitValues(schema: RenderableSchema, values: RenderableValues) 
             else uniformValues[k] = values[k];
         }
     });
-    return { attributeValues, defineValues, textureValues, uniformValues, materialUniformValues, bufferedUniformValues };
+    return { attributeValues, defineValues, textureValues, materialTextureValues, uniformValues, materialUniformValues, bufferedUniformValues };
 }
 
 export type Versions<T extends RenderableValues> = { [k in keyof T]: number }
@@ -76,9 +81,9 @@ export function UniformSpec<K extends UniformKind>(kind: K, variant?: 'material'
     return { type: 'uniform', kind, variant };
 }
 
-export type TextureSpec<K extends TextureKind> = { type: 'texture', kind: K, format: TextureFormat, dataType: TextureType, filter: TextureFilter }
-export function TextureSpec<K extends TextureKind>(kind: K, format: TextureFormat, dataType: TextureType, filter: TextureFilter): TextureSpec<K> {
-    return { type: 'texture', kind, format, dataType, filter };
+export type TextureSpec<K extends TextureKind> = { type: 'texture', kind: K, format: TextureFormat, dataType: TextureType, filter: TextureFilter, variant?: 'material' }
+export function TextureSpec<K extends TextureKind>(kind: K, format: TextureFormat, dataType: TextureType, filter: TextureFilter, variant?: 'material'): TextureSpec<K> {
+    return { type: 'texture', kind, format, dataType, filter, variant };
 }
 
 export type ElementsSpec<K extends ElementsKind> = { type: 'elements', kind: K }
@@ -106,7 +111,6 @@ export type RenderableSchema = {
 }
 export type RenderableValues = { readonly [k: string]: ValueCell<any> }
 
-
 //
 
 export const GlobalUniformSchema = {
@@ -122,7 +126,6 @@ export const GlobalUniformSchema = {
 
     uIsOrtho: UniformSpec('f'),
     uPixelRatio: UniformSpec('f'),
-    uViewportHeight: UniformSpec('f'),
     uViewport: UniformSpec('v4'),
     uViewOffset: UniformSpec('v2'),
     uDrawingBufferSize: UniformSpec('v2'),
@@ -137,21 +140,9 @@ export const GlobalUniformSchema = {
 
     uTransparentBackground: UniformSpec('b'),
 
-    uClipObjectType: UniformSpec('i[]'),
-    uClipObjectInvert: UniformSpec('b[]'),
-    uClipObjectPosition: UniformSpec('v3[]'),
-    uClipObjectRotation: UniformSpec('v4[]'),
-    uClipObjectScale: UniformSpec('v3[]'),
-
-    // all the following could in principle be per object
-    // as a kind of 'material' parameter set
-    // would need to test performance implications
-    uLightIntensity: UniformSpec('f'),
-    uAmbientIntensity: UniformSpec('f'),
-
-    uMetalness: UniformSpec('f'),
-    uRoughness: UniformSpec('f'),
-    uReflectivity: UniformSpec('f'),
+    uLightDirection: UniformSpec('v3[]'),
+    uLightColor: UniformSpec('v3[]'),
+    uAmbientColor: UniformSpec('v3'),
 
     uPickingAlphaThreshold: UniformSpec('f'),
 
@@ -161,16 +152,27 @@ export const GlobalUniformSchema = {
 
     uHighlightColor: UniformSpec('v3'),
     uSelectColor: UniformSpec('v3'),
+    uHighlightStrength: UniformSpec('f'),
+    uSelectStrength: UniformSpec('f'),
+    uMarkerPriority: UniformSpec('i'),
 
     uXrayEdgeFalloff: UniformSpec('f'),
 
-    uRenderWboit: UniformSpec('b'),
+    uRenderMask: UniformSpec('i'),
+    uMarkingDepthTest: UniformSpec('b'),
+    uMarkingType: UniformSpec('i'),
+    uPickType: UniformSpec('i'),
 } as const;
 export type GlobalUniformSchema = typeof GlobalUniformSchema
 export type GlobalUniformValues = Values<GlobalUniformSchema>
 
 export const GlobalTextureSchema = {
     tDepth: TextureSpec('texture', 'depth', 'ushort', 'nearest'),
+
+    // dpoit
+    tDpoitDepth: TextureSpec('texture', 'rg', 'float', 'nearest'),
+    tDpoitFrontColor: TextureSpec('texture', 'rgba', 'float', 'nearest'),
+    tDpoitBackColor: TextureSpec('texture', 'rgba', 'float', 'nearest')
 } as const;
 export type GlobalTextureSchema = typeof GlobalTextureSchema
 export type GlobalTextureValues = Values<GlobalTextureSchema>
@@ -190,7 +192,7 @@ export const ColorSchema = {
     tColor: TextureSpec('image-uint8', 'rgb', 'ubyte', 'nearest'),
     tPalette: TextureSpec('image-uint8', 'rgb', 'ubyte', 'nearest'),
     tColorGrid: TextureSpec('texture', 'rgb', 'ubyte', 'linear'),
-    dColorType: DefineSpec('string', ['uniform', 'attribute', 'instance', 'group', 'groupInstance', 'vertex', 'vertexInstance', 'volume', 'volumeInstance']),
+    dColorType: DefineSpec('string', ['uniform', 'attribute', 'instance', 'group', 'groupInstance', 'vertex', 'vertexInstance', 'volume', 'volumeInstance', 'direct']),
     dUsePalette: DefineSpec('boolean'),
 } as const;
 export type ColorSchema = typeof ColorSchema
@@ -202,14 +204,18 @@ export const SizeSchema = {
     uSizeTexDim: UniformSpec('v2'),
     tSize: TextureSpec('image-uint8', 'rgb', 'ubyte', 'nearest'),
     dSizeType: DefineSpec('string', ['uniform', 'attribute', 'instance', 'group', 'groupInstance']),
-    uSizeFactor: UniformSpec('f'),
+    uSizeFactor: UniformSpec('f', 'material'),
 } as const;
 export type SizeSchema = typeof SizeSchema
 export type SizeValues = Values<SizeSchema>
 
 export const MarkerSchema = {
+    uMarker: UniformSpec('f'),
     uMarkerTexDim: UniformSpec('v2'),
     tMarker: TextureSpec('image-uint8', 'alpha', 'ubyte', 'nearest'),
+    markerAverage: ValueSpec('number'),
+    markerStatus: ValueSpec('number'),
+    dMarkerType: DefineSpec('string', ['instance', 'groupInstance']),
 } as const;
 export type MarkerSchema = typeof MarkerSchema
 export type MarkerValues = Values<MarkerSchema>
@@ -218,6 +224,11 @@ export const OverpaintSchema = {
     uOverpaintTexDim: UniformSpec('v2'),
     tOverpaint: TextureSpec('image-uint8', 'rgba', 'ubyte', 'nearest'),
     dOverpaint: DefineSpec('boolean'),
+
+    uOverpaintGridDim: UniformSpec('v3'),
+    uOverpaintGridTransform: UniformSpec('v4'),
+    tOverpaintGrid: TextureSpec('texture', 'rgba', 'ubyte', 'linear'),
+    dOverpaintType: DefineSpec('string', ['instance', 'groupInstance', 'volumeInstance']),
 } as const;
 export type OverpaintSchema = typeof OverpaintSchema
 export type OverpaintValues = Values<OverpaintSchema>
@@ -227,27 +238,57 @@ export const TransparencySchema = {
     tTransparency: TextureSpec('image-uint8', 'alpha', 'ubyte', 'nearest'),
     dTransparency: DefineSpec('boolean'),
     transparencyAverage: ValueSpec('number'),
+
+    uTransparencyGridDim: UniformSpec('v3'),
+    uTransparencyGridTransform: UniformSpec('v4'),
+    tTransparencyGrid: TextureSpec('texture', 'alpha', 'ubyte', 'linear'),
+    dTransparencyType: DefineSpec('string', ['instance', 'groupInstance', 'volumeInstance'])
 } as const;
 export type TransparencySchema = typeof TransparencySchema
 export type TransparencyValues = Values<TransparencySchema>
 
-export const ClippingSchema = {
-    dClipObjectCount: DefineSpec('number'),
-    dClipVariant: DefineSpec('string', ['instance', 'pixel']),
+export const SubstanceSchema = {
+    uSubstanceTexDim: UniformSpec('v2'),
+    tSubstance: TextureSpec('image-uint8', 'rgba', 'ubyte', 'nearest'),
+    dSubstance: DefineSpec('boolean'),
 
+    uSubstanceGridDim: UniformSpec('v3'),
+    uSubstanceGridTransform: UniformSpec('v4'),
+    tSubstanceGrid: TextureSpec('texture', 'rgba', 'ubyte', 'linear'),
+    dSubstanceType: DefineSpec('string', ['instance', 'groupInstance', 'volumeInstance']),
+} as const;
+export type SubstanceSchema = typeof SubstanceSchema
+export type SubstanceValues = Values<SubstanceSchema>
+
+export const ClippingSchema = {
     uClippingTexDim: UniformSpec('v2'),
     tClipping: TextureSpec('image-uint8', 'alpha', 'ubyte', 'nearest'),
     dClipping: DefineSpec('boolean'),
+    dClippingType: DefineSpec('string', ['instance', 'groupInstance']),
 } as const;
 export type ClippingSchema = typeof ClippingSchema
 export type ClippingValues = Values<ClippingSchema>
 
 export const BaseSchema = {
+    dGeometryType: DefineSpec('string', ['cylinders', 'directVolume', 'image', 'lines', 'mesh', 'points', 'spheres', 'text', 'textureMesh']),
+
     ...ColorSchema,
     ...MarkerSchema,
     ...OverpaintSchema,
     ...TransparencySchema,
+    ...SubstanceSchema,
     ...ClippingSchema,
+
+    dLightCount: DefineSpec('number'),
+    dColorMarker: DefineSpec('boolean'),
+
+    dClipObjectCount: DefineSpec('number'),
+    dClipVariant: DefineSpec('string', ['instance', 'pixel']),
+    uClipObjectType: UniformSpec('i[]', 'material'),
+    uClipObjectInvert: UniformSpec('b[]', 'material'),
+    uClipObjectPosition: UniformSpec('v3[]', 'material'),
+    uClipObjectRotation: UniformSpec('v4[]', 'material'),
+    uClipObjectScale: UniformSpec('v3[]', 'material'),
 
     aInstance: AttributeSpec('float32', 1, 1),
     /**
@@ -260,6 +301,10 @@ export const BaseSchema = {
      * final alpha, calculated as `values.alpha * state.alpha`
      */
     uAlpha: UniformSpec('f', 'material'),
+    uMetalness: UniformSpec('f', 'material'),
+    uRoughness: UniformSpec('f', 'material'),
+    uBumpiness: UniformSpec('f', 'material'),
+
     uVertexCount: UniformSpec('i'),
     uInstanceCount: UniformSpec('i'),
     uGroupCount: UniformSpec('i'),
@@ -279,6 +324,8 @@ export const BaseSchema = {
     extraTransform: ValueSpec('float32'),
     /** denotes reflection in transform */
     hasReflection: ValueSpec('boolean'),
+    /** use instance granularity for marker, transparency, clipping, overpaint, substance */
+    instanceGranularity: ValueSpec('boolean'),
 
     /** bounding sphere taking aTransform into account and encompases all instances */
     boundingSphere: ValueSpec('sphere'),

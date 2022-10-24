@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2020-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2020-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -17,7 +17,7 @@ import { hashString, hashFnv32a } from '../../mol-data/util';
 import { DefineValues, ShaderCode } from '../shader-code';
 import { RenderableSchema } from '../renderable/schema';
 import { createRenderbuffer, Renderbuffer, RenderbufferAttachment, RenderbufferFormat } from './renderbuffer';
-import { Texture, TextureKind, TextureFormat, TextureType, TextureFilter, createTexture } from './texture';
+import { Texture, TextureKind, TextureFormat, TextureType, TextureFilter, createTexture, CubeFaces, createCubeTexture } from './texture';
 import { VertexArray, createVertexArray } from './vertex-array';
 
 function defineValueHash(v: boolean | number | string): number {
@@ -59,6 +59,7 @@ export interface WebGLResources {
     renderbuffer: (format: RenderbufferFormat, attachment: RenderbufferAttachment, width: number, height: number) => Renderbuffer
     shader: (type: ShaderType, source: string) => Shader
     texture: (kind: TextureKind, format: TextureFormat, type: TextureType, filter: TextureFilter) => Texture,
+    cubeTexture: (faces: CubeFaces, mipaps: boolean, onload?: () => void) => Texture,
     vertexArray: (program: Program, attributeBuffers: AttributeBuffers, elementsBuffer?: ElementsBuffer) => VertexArray,
 
     getByteCounts: () => ByteCounts
@@ -76,6 +77,7 @@ export function createResources(gl: GLRenderingContext, state: WebGLState, stats
         renderbuffer: new Set<Resource>(),
         shader: new Set<Resource>(),
         texture: new Set<Resource>(),
+        cubeTexture: new Set<Resource>(),
         vertexArray: new Set<Resource>(),
     };
 
@@ -104,8 +106,13 @@ export function createResources(gl: GLRenderingContext, state: WebGLState, stats
 
     const programCache = createReferenceCache(
         (props: ProgramProps) => {
-            const array = [ props.shaderCode.id ];
-            Object.keys(props.defineValues).forEach(k => array.push(hashString(k), defineValueHash(props.defineValues[k].ref.value)));
+            const array = [props.shaderCode.id];
+            const variant = (props.defineValues.dRenderVariant?.ref.value || '') as string;
+            Object.keys(props.defineValues).forEach(k => {
+                if (!props.shaderCode.ignoreDefine?.(k, variant, props.defineValues)) {
+                    array.push(hashString(k), defineValueHash(props.defineValues[k].ref.value));
+                }
+            });
             return hashFnv32a(array).toString();
         },
         (props: ProgramProps) => wrap('program', createProgram(gl, state, extensions, getShader, props)),
@@ -114,7 +121,7 @@ export function createResources(gl: GLRenderingContext, state: WebGLState, stats
 
     return {
         attribute: (array: ArrayType, itemSize: AttributeItemSize, divisor: number, usageHint?: UsageHint) => {
-            return wrap('attribute', createAttributeBuffer(gl, extensions, array, itemSize, divisor, usageHint));
+            return wrap('attribute', createAttributeBuffer(gl, state, extensions, array, itemSize, divisor, usageHint));
         },
         elements: (array: ElementsType, usageHint?: UsageHint) => {
             return wrap('elements', createElementsBuffer(gl, array, usageHint));
@@ -132,13 +139,19 @@ export function createResources(gl: GLRenderingContext, state: WebGLState, stats
         texture: (kind: TextureKind, format: TextureFormat, type: TextureType, filter: TextureFilter) => {
             return wrap('texture', createTexture(gl, extensions, kind, format, type, filter));
         },
+        cubeTexture: (faces: CubeFaces, mipmaps: boolean, onload?: () => void) => {
+            return wrap('cubeTexture', createCubeTexture(gl, faces, mipmaps, onload));
+        },
         vertexArray: (program: Program, attributeBuffers: AttributeBuffers, elementsBuffer?: ElementsBuffer) => {
-            return wrap('vertexArray', createVertexArray(extensions, program, attributeBuffers, elementsBuffer));
+            return wrap('vertexArray', createVertexArray(gl, extensions, program, attributeBuffers, elementsBuffer));
         },
 
         getByteCounts: () => {
             let texture = 0;
             sets.texture.forEach(r => {
+                texture += (r as Texture).getByteCount();
+            });
+            sets.cubeTexture.forEach(r => {
                 texture += (r as Texture).getByteCount();
             });
 

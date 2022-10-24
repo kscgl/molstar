@@ -5,5 +5,9 @@ if (interior) {
     } else {
         gl_FragColor.rgb *= 1.0 - uInteriorDarkening;
     }
+
+    #ifdef dTransparentBackfaces_opaque
+        gl_FragColor.a = 1.0;
+    #endif
 }
 `;

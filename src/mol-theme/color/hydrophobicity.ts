@@ -58,9 +58,9 @@ export function HydrophobicityColorTheme(ctx: ThemeDataContext, props: PD.Values
 
     const scale = ColorScale.create({
         listOrName: props.list.colors,
-        domain: [ max, min ],
-        minLabel: 'Hydrophobic',
-        maxLabel: 'Hydrophilic'
+        domain: [max, min],
+        minLabel: 'Hydrophilic',
+        maxLabel: 'Hydrophobic'
     });
 
     function color(location: Location): Color {

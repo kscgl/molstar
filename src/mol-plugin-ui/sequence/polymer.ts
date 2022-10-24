@@ -14,13 +14,13 @@ import { ColorNames } from '../../mol-util/color/names';
 import { MarkerAction, applyMarkerAction, applyMarkerActionAtPosition } from '../../mol-util/marker-action';
 
 export class PolymerSequenceWrapper extends SequenceWrapper<StructureUnit> {
-    private readonly unitMap: Map<number, Unit>
-    private readonly sequence: Sequence
-    private readonly missing: MissingResidues
-    private readonly observed: OrderedSet // sequences indices
+    private readonly unitMap: Map<number, Unit>;
+    private readonly sequence: Sequence;
+    private readonly missing: MissingResidues;
+    private readonly observed: OrderedSet; // sequences indices
 
-    private readonly modelNum: number
-    private readonly asymId: string
+    private readonly modelNum: number;
+    private readonly asymId: string;
 
     private seqId(seqIdx: number) {
         return this.sequence.seqId.value(seqIdx);
@@ -92,7 +92,7 @@ export class PolymerSequenceWrapper extends SequenceWrapper<StructureUnit> {
         for (let i = 0; i < length; ++i) {
             if (this.missing.has(this.modelNum, this.asymId, this.seqId(i))) missing.push(i);
         }
-        this.observed = OrderedSet.subtract(Interval.ofBounds(0, length),  SortedArray.ofSortedArray(missing));
+        this.observed = OrderedSet.subtract(Interval.ofBounds(0, length), SortedArray.ofSortedArray(missing));
     }
 }
 

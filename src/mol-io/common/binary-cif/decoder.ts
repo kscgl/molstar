@@ -7,6 +7,7 @@
 
 import { Encoding, EncodedData } from './encoding';
 import { IsNativeEndianLittle, flipByteOrder } from '../binary';
+import { assertUnreachable } from '../../../mol-util/type-helpers';
 
 /**
  * Fixed point, delta, RLE, integer packing adopted from https://github.com/rcsb/mmtf-javascript/
@@ -33,7 +34,7 @@ function decodeStep(data: any, encoding: Encoding): any {
                 case Encoding.IntDataType.Uint32: return uint32(data);
                 case Encoding.FloatDataType.Float32: return float32(data);
                 case Encoding.FloatDataType.Float64: return float64(data);
-                default: throw new Error('Unsupported ByteArray type.');
+                default: assertUnreachable(encoding.type);
             }
         }
         case 'FixedPoint': return fixedPoint(data, encoding);
@@ -53,7 +54,7 @@ function getIntArray(type: Encoding.IntDataType, size: number) {
         case Encoding.IntDataType.Uint8: return new Uint8Array(size);
         case Encoding.IntDataType.Uint16: return new Uint16Array(size);
         case Encoding.IntDataType.Uint32: return new Uint32Array(size);
-        default: throw new Error('Unsupported integer data type.');
+        default: assertUnreachable(type);
     }
 }
 
@@ -61,7 +62,7 @@ function getFloatArray(type: Encoding.FloatDataType, size: number) {
     switch (type) {
         case Encoding.FloatDataType.Float32: return new Float32Array(size);
         case Encoding.FloatDataType.Float64: return new Float64Array(size);
-        default: throw new Error('Unsupported floating data type.');
+        default: assertUnreachable(type);
     }
 }
 
@@ -80,9 +81,9 @@ function float32(data: Uint8Array) { return view(data, 4, Float32Array); }
 function float64(data: Uint8Array) { return view(data, 8, Float64Array); }
 
 function fixedPoint(data: Int32Array, encoding: Encoding.FixedPoint) {
-    let n = data.length;
-    let output = getFloatArray(encoding.srcType, n);
-    let f = 1 / encoding.factor;
+    const n = data.length;
+    const output = getFloatArray(encoding.srcType, n);
+    const f = 1 / encoding.factor;
     for (let i = 0; i < n; i++) {
         output[i] = f * data[i];
     }
@@ -90,10 +91,10 @@ function fixedPoint(data: Int32Array, encoding: Encoding.FixedPoint) {
 }
 
 function intervalQuantization(data: Int32Array, encoding: Encoding.IntervalQuantization) {
-    let n = data.length;
-    let output = getFloatArray(encoding.srcType, n);
-    let delta = (encoding.max - encoding.min) / (encoding.numSteps - 1);
-    let min = encoding.min;
+    const n = data.length;
+    const output = getFloatArray(encoding.srcType, n);
+    const delta = (encoding.max - encoding.min) / (encoding.numSteps - 1);
+    const min = encoding.min;
     for (let i = 0; i < n; i++) {
         output[i] = min + delta * data[i];
     }
@@ -101,11 +102,11 @@ function intervalQuantization(data: Int32Array, encoding: Encoding.IntervalQuant
 }
 
 function runLength(data: Int32Array, encoding: Encoding.RunLength) {
-    let output = getIntArray(encoding.srcType, encoding.srcSize);
+    const output = getIntArray(encoding.srcType, encoding.srcSize);
     let dataOffset = 0;
     for (let i = 0, il = data.length; i < il; i += 2) {
-        let value = data[i];  // value to be repeated
-        let length = data[i + 1];  // number of repeats
+        const value = data[i]; // value to be repeated
+        const length = data[i + 1]; // number of repeats
         for (let j = 0; j < length; ++j) {
             output[dataOffset++] = value;
         }
@@ -114,8 +115,8 @@ function runLength(data: Int32Array, encoding: Encoding.RunLength) {
 }
 
 function delta(data: (Int8Array | Int16Array | Int32Array), encoding: Encoding.Delta) {
-    let n = data.length;
-    let output = getIntArray(encoding.srcType, n);
+    const n = data.length;
+    const output = getIntArray(encoding.srcType, n);
     if (!n) return data;
     output[0] = data[0] + (encoding.origin | 0);
     for (let i = 1; i < n; ++i) {
@@ -125,10 +126,10 @@ function delta(data: (Int8Array | Int16Array | Int32Array), encoding: Encoding.D
 }
 
 function integerPackingSigned(data: (Int8Array | Int16Array), encoding: Encoding.IntegerPacking) {
-    let upperLimit = encoding.byteCount === 1 ? 0x7F : 0x7FFF;
-    let lowerLimit = -upperLimit - 1;
-    let n = data.length;
-    let output = new Int32Array(encoding.srcSize);
+    const upperLimit = encoding.byteCount === 1 ? 0x7F : 0x7FFF;
+    const lowerLimit = -upperLimit - 1;
+    const n = data.length;
+    const output = new Int32Array(encoding.srcSize);
     let i = 0;
     let j = 0;
     while (i < n) {
@@ -147,9 +148,9 @@ function integerPackingSigned(data: (Int8Array | Int16Array), encoding: Encoding
 }
 
 function integerPackingUnsigned(data: (Int8Array | Int16Array), encoding: Encoding.IntegerPacking) {
-    let upperLimit = encoding.byteCount === 1 ? 0xFF : 0xFFFF;
-    let n = data.length;
-    let output = new Int32Array(encoding.srcSize);
+    const upperLimit = encoding.byteCount === 1 ? 0xFF : 0xFFFF;
+    const n = data.length;
+    const output = new Int32Array(encoding.srcSize);
     let i = 0;
     let j = 0;
     while (i < n) {

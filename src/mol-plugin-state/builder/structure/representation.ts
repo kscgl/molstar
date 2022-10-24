@@ -29,7 +29,7 @@ export class StructureRepresentationBuilder {
 
     readonly defaultProvider = PresetStructureRepresentations.auto;
 
-    private resolveProvider(ref: StructureRepresentationPresetProviderRef) {
+    resolveProvider(ref: StructureRepresentationPresetProviderRef) {
         return typeof ref === 'string'
             ? PresetStructureRepresentations[ref as keyof PresetStructureRepresentations] ?? arrayFind(this._providers, p => p.id === ref)
             : ref;
@@ -90,7 +90,7 @@ export class StructureRepresentationBuilder {
     }
 
     applyPreset<K extends keyof PresetStructureRepresentations>(parent: StateObjectRef<PluginStateObject.Molecule.Structure>, preset: K, params?: StructureRepresentationPresetProvider.Params<PresetStructureRepresentations[K]>): Promise<StructureRepresentationPresetProvider.State<PresetStructureRepresentations[K]>> | undefined
-    applyPreset<P = any, S = {}>(parent: StateObjectRef<PluginStateObject.Molecule.Structure>, provider: StructureRepresentationPresetProvider<P, S>, params?: P): Promise<S> | undefined
+    applyPreset<P = any, S extends {} = {}>(parent: StateObjectRef<PluginStateObject.Molecule.Structure>, provider: StructureRepresentationPresetProvider<P, S>, params?: P): Promise<S> | undefined
     applyPreset(parent: StateObjectRef<PluginStateObject.Molecule.Structure>, providerId: string, params?: any): Promise<any> | undefined
     applyPreset(parent: StateObjectRef, providerRef: string | StructureRepresentationPresetProvider, params?: any): Promise<any> | undefined {
         const provider = this.resolveProvider(providerRef);

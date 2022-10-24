@@ -16,7 +16,6 @@ import { Mat4, Vec3 } from '../../../mol-math/linear-algebra';
 import { eachElement, eachSerialElement, ElementIterator, getElementLoci, getSerialElementLoci } from './util/element';
 import { Sphere3D } from '../../../mol-math/geometry';
 import { UnitsDirectVolumeParams, UnitsVisual, UnitsDirectVolumeVisual } from '../units-visual';
-import { getStructureExtraRadius, getUnitExtraRadius } from './util/common';
 
 async function createGaussianDensityVolume(ctx: VisualContext, structure: Structure, theme: Theme, props: GaussianDensityProps, directVolume?: DirectVolume): Promise<DirectVolume> {
     const { runtime, webgl } = ctx;
@@ -25,16 +24,16 @@ async function createGaussianDensityVolume(ctx: VisualContext, structure: Struct
     }
 
     const oldTexture = directVolume ? directVolume.gridTexture.ref.value : undefined;
-    const densityTextureData = await computeStructureGaussianDensityTexture(structure, props, webgl, oldTexture).runInContext(runtime);
+    const densityTextureData = await computeStructureGaussianDensityTexture(structure, theme.size, props, webgl, oldTexture).runInContext(runtime);
     const { transform, texture, bbox, gridDim } = densityTextureData;
     const stats = { min: 0, max: 1, mean: 0.04, sigma: 0.01 };
 
     const unitToCartn = Mat4.mul(Mat4(), transform, Mat4.fromScaling(Mat4(), gridDim));
     const cellDim = Mat4.getScaling(Vec3(), transform);
+    const axisOrder = Vec3.create(0, 1, 2);
+    const vol = DirectVolume.create(bbox, gridDim, transform, unitToCartn, cellDim, texture, stats, true, axisOrder, directVolume);
 
-    const vol = DirectVolume.create(bbox, gridDim, transform, unitToCartn, cellDim, texture, stats, true, directVolume);
-
-    const sphere = Sphere3D.expand(Sphere3D(), structure.boundary.sphere, props.radiusOffset + getStructureExtraRadius(structure));
+    const sphere = Sphere3D.expand(Sphere3D(), structure.boundary.sphere, densityTextureData.maxRadius);
     vol.setBoundingSphere(sphere);
 
     return vol;
@@ -44,6 +43,7 @@ export const GaussianDensityVolumeParams = {
     ...ComplexDirectVolumeParams,
     ...GaussianDensityParams,
     ignoreHydrogens: PD.Boolean(false),
+    includeParent: PD.Boolean(false, { isHidden: true }),
 };
 export type GaussianDensityVolumeParams = typeof GaussianDensityVolumeParams
 
@@ -80,16 +80,16 @@ async function createUnitsGaussianDensityVolume(ctx: VisualContext, unit: Unit, 
     }
 
     const oldTexture = directVolume ? directVolume.gridTexture.ref.value : undefined;
-    const densityTextureData = await computeUnitGaussianDensityTexture(structure, unit, props, webgl, oldTexture).runInContext(runtime);
+    const densityTextureData = await computeUnitGaussianDensityTexture(structure, unit, theme.size, props, webgl, oldTexture).runInContext(runtime);
     const { transform, texture, bbox, gridDim } = densityTextureData;
     const stats = { min: 0, max: 1, mean: 0.04, sigma: 0.01 };
 
     const unitToCartn = Mat4.mul(Mat4(), transform, Mat4.fromScaling(Mat4(), gridDim));
     const cellDim = Mat4.getScaling(Vec3(), transform);
+    const axisOrder = Vec3.create(0, 1, 2);
+    const vol = DirectVolume.create(bbox, gridDim, transform, unitToCartn, cellDim, texture, stats, true, axisOrder, directVolume);
 
-    const vol = DirectVolume.create(bbox, gridDim, transform, unitToCartn, cellDim, texture, stats, true, directVolume);
-
-    const sphere = Sphere3D.expand(Sphere3D(), unit.boundary.sphere, props.radiusOffset + getUnitExtraRadius(unit));
+    const sphere = Sphere3D.expand(Sphere3D(), unit.boundary.sphere, densityTextureData.maxRadius);
     vol.setBoundingSphere(sphere);
 
     return vol;
@@ -99,6 +99,7 @@ export const UnitsGaussianDensityVolumeParams = {
     ...UnitsDirectVolumeParams,
     ...GaussianDensityParams,
     ignoreHydrogens: PD.Boolean(false),
+    includeParent: PD.Boolean(false, { isHidden: true }),
 };
 export type UnitsGaussianDensityVolumeParams = typeof UnitsGaussianDensityVolumeParams
 

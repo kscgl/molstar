@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017-2020 Mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2017-2022 Mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -9,7 +9,7 @@ import { BondType } from '../../../model/types';
 import { IntraUnitBonds } from './data';
 import { Unit } from '../../unit';
 import { IntAdjacencyGraph } from '../../../../../mol-math/graph';
-import { BondComputationProps, getElementIdx, MetalsSet, getElementThreshold, isHydrogen, getElementPairThreshold, DefaultBondComputationProps } from './common';
+import { BondComputationProps, getElementIdx, MetalsSet, getElementThreshold, isHydrogen, DefaultBondComputationProps, getPairingThreshold } from './common';
 import { SortedArray } from '../../../../../mol-data/int';
 import { getIntraBondOrderFromTable } from '../../../model/properties/atomic/bonds';
 import { StructureElement } from '../../element';
@@ -21,17 +21,22 @@ import { ElementIndex } from '../../../model/indexing';
 import { equalEps } from '../../../../../mol-math/linear-algebra/3d/common';
 import { Model } from '../../../model/model';
 
-function getGraph(atomA: StructureElement.UnitIndex[], atomB: StructureElement.UnitIndex[], _order: number[], _flags: number[], atomCount: number, canRemap: boolean): IntraUnitBonds {
+// avoiding namespace lookup improved performance in Chrome (Aug 2020)
+const v3distance = Vec3.distance;
+
+function getGraph(atomA: StructureElement.UnitIndex[], atomB: StructureElement.UnitIndex[], _order: number[], _flags: number[], _key: number[], atomCount: number, canRemap: boolean): IntraUnitBonds {
     const builder = new IntAdjacencyGraph.EdgeBuilder(atomCount, atomA, atomB);
     const flags = new Uint16Array(builder.slotCount);
     const order = new Int8Array(builder.slotCount);
+    const key = new Uint32Array(builder.slotCount);
     for (let i = 0, _i = builder.edgeCount; i < _i; i++) {
         builder.addNextEdge();
         builder.assignProperty(flags, _flags[i]);
         builder.assignProperty(order, _order[i]);
+        builder.assignProperty(key, _key[i]);
     }
 
-    return builder.createGraph({ flags, order }, { canRemap });
+    return builder.createGraph({ flags, order, key }, { canRemap });
 }
 
 const tmpDistVecA = Vec3();
@@ -39,7 +44,7 @@ const tmpDistVecB = Vec3();
 function getDistance(unit: Unit.Atomic, indexA: ElementIndex, indexB: ElementIndex) {
     unit.conformation.position(indexA, tmpDistVecA);
     unit.conformation.position(indexB, tmpDistVecB);
-    return Vec3.distance(tmpDistVecA, tmpDistVecB);
+    return v3distance(tmpDistVecA, tmpDistVecB);
 }
 
 const __structConnAdded = new Set<StructureElement.UnitIndex>();
@@ -49,7 +54,8 @@ function findIndexPairBonds(unit: Unit.Atomic) {
     const { elements: atoms } = unit;
     const { type_symbol } = unit.model.atomicHierarchy.atoms;
     const atomCount = unit.elements.length;
-    const { edgeProps } = indexPairs;
+    const { maxDistance } = indexPairs;
+    const { offset, b, edgeProps: { order, distance, flag, key } } = indexPairs.bonds;
 
     const { atomSourceIndex: sourceIndex } = unit.model.atomicHierarchy;
     const { invertedIndex } = Model.getInvertedAtomSourceIndex(unit.model);
@@ -57,37 +63,60 @@ function findIndexPairBonds(unit: Unit.Atomic) {
     const atomA: StructureElement.UnitIndex[] = [];
     const atomB: StructureElement.UnitIndex[] = [];
     const flags: number[] = [];
-    const order: number[] = [];
+    const orders: number[] = [];
+    const keys: number[] = [];
 
     for (let _aI = 0 as StructureElement.UnitIndex; _aI < atomCount; _aI++) {
-        const aI =  atoms[_aI];
-        const isHa = type_symbol.value(aI) === 'H';
+        const aI = atoms[_aI];
+        const aeI = getElementIdx(type_symbol.value(aI));
+        const isHa = isHydrogen(aeI);
 
         const srcA = sourceIndex.value(aI);
 
-        for (let i = indexPairs.offset[srcA], il = indexPairs.offset[srcA + 1]; i < il; ++i) {
-            const bI = invertedIndex[indexPairs.b[i]];
+        for (let i = offset[srcA], il = offset[srcA + 1]; i < il; ++i) {
+            const bI = invertedIndex[b[i]];
             if (aI >= bI) continue;
 
             const _bI = SortedArray.indexOf(unit.elements, bI) as StructureElement.UnitIndex;
             if (_bI < 0) continue;
-            if (isHa && type_symbol.value(bI) === 'H') continue;
 
-            const d = edgeProps.distance[i];
-            if (d === -1 || d === void 0 || equalEps(getDistance(unit, aI, bI), d, 0.5)) {
+            const beI = getElementIdx(type_symbol.value(bI));
+
+            const d = distance[i];
+            const dist = getDistance(unit, aI, bI);
+
+            let add = false;
+            if (d >= 0) {
+                add = equalEps(dist, d, 0.3);
+            } else if (maxDistance >= 0) {
+                add = dist < maxDistance;
+            } else {
+                const pairingThreshold = getPairingThreshold(
+                    aeI, beI, getElementThreshold(aeI), getElementThreshold(beI)
+                );
+                add = dist < pairingThreshold;
+
+                if (isHa && isHydrogen(beI)) {
+                    // TODO handle molecular hydrogen
+                    add = false;
+                }
+            }
+
+            if (add) {
                 atomA[atomA.length] = _aI;
                 atomB[atomB.length] = _bI;
-                order[order.length] = edgeProps.order[i];
-                flags[flags.length] = edgeProps.flag[i];
+                orders[orders.length] = order[i];
+                flags[flags.length] = flag[i];
+                keys[keys.length] = key[i];
             }
         }
     }
 
-    return getGraph(atomA, atomB, order, flags, atomCount, false);
+    return getGraph(atomA, atomB, orders, flags, keys, atomCount, false);
 }
 
 function findBonds(unit: Unit.Atomic, props: BondComputationProps): IntraUnitBonds {
-    const MAX_RADIUS = 4;
+    const { maxRadius } = props;
 
     const { x, y, z } = unit.model.atomicConformation;
     const atomCount = unit.elements.length;
@@ -107,19 +136,20 @@ function findBonds(unit: Unit.Atomic, props: BondComputationProps): IntraUnitBon
     const atomB: StructureElement.UnitIndex[] = [];
     const flags: number[] = [];
     const order: number[] = [];
+    const key: number[] = [];
 
     let lastResidue = -1;
-    let componentMap: Map<string, Map<string, { flags: number, order: number }>> | undefined = void 0;
+    let componentMap: Map<string, Map<string, { flags: number, order: number, key: number }>> | undefined = void 0;
 
     let isWatery = true, isDictionaryBased = true, isSequenced = true;
 
     const structConnAdded = __structConnAdded;
 
     for (let _aI = 0 as StructureElement.UnitIndex; _aI < atomCount; _aI++) {
-        const aI =  atoms[_aI];
+        const aI = atoms[_aI];
 
         const elemA = type_symbol.value(aI);
-        if (isWatery && (elemA !== 'H' || elemA !== 'O')) isWatery = false;
+        if (isWatery && (elemA !== 'H' && elemA !== 'O')) isWatery = false;
 
         const structConnEntries = props.forceCompute ? void 0 : structConn && structConn.byAtomIndex.get(aI);
         let hasStructConn = false;
@@ -131,12 +161,13 @@ function findBonds(unit: Unit.Atomic, props: BondComputationProps): IntraUnitBon
 
                 const p = partnerA.atomIndex === aI ? partnerB : partnerA;
                 const _bI = SortedArray.indexOf(unit.elements, p.atomIndex) as StructureElement.UnitIndex;
-                if (_bI < 0) continue;
+                if (_bI < 0 || atoms[_bI] < aI) continue;
 
                 atomA[atomA.length] = _aI;
                 atomB[atomB.length] = _bI;
                 flags[flags.length] = se.flags;
                 order[order.length] = se.order;
+                key[key.length] = se.rowIndex;
 
                 if (!hasStructConn) structConnAdded.clear();
                 hasStructConn = true;
@@ -168,7 +199,7 @@ function findBonds(unit: Unit.Atomic, props: BondComputationProps): IntraUnitBon
         const atomIdA = label_atom_id.value(aI);
         const componentPairs = componentMap ? componentMap.get(atomIdA) : void 0;
 
-        const { indices, count, squaredDistances } = query3d.find(x[aI], y[aI], z[aI], MAX_RADIUS);
+        const { indices, count, squaredDistances } = query3d.find(x[aI], y[aI], z[aI], maxRadius);
         const isHa = isHydrogen(aeI);
         const thresholdA = getElementThreshold(aeI);
         const altA = label_alt_id.value(aI);
@@ -205,6 +236,7 @@ function findBonds(unit: Unit.Atomic, props: BondComputationProps): IntraUnitBon
                         flag |= BondType.Flag.MetallicCoordination;
                     }
                     flags[flags.length] = flag;
+                    key[key.length] = e.key;
                 }
                 continue;
             }
@@ -212,18 +244,13 @@ function findBonds(unit: Unit.Atomic, props: BondComputationProps): IntraUnitBon
             const dist = Math.sqrt(squaredDistances[ni]);
             if (dist === 0) continue;
 
-            const thresholdAB = getElementPairThreshold(aeI, beI);
-            const pairingThreshold = thresholdAB > 0
-                ? thresholdAB
-                : beI < 0
-                    ? thresholdA
-                    : (thresholdA + getElementThreshold(beI)) / 1.95; // not sure if avg or min but max is too big
-
+            const pairingThreshold = getPairingThreshold(aeI, beI, thresholdA, getElementThreshold(beI));
             if (dist <= pairingThreshold) {
                 atomA[atomA.length] = _aI;
                 atomB[atomB.length] = _bI;
                 order[order.length] = getIntraBondOrderFromTable(compId, atomIdA, label_atom_id.value(bI));
                 flags[flags.length] = (isMetal ? BondType.Flag.MetallicCoordination : BondType.Flag.Covalent) | BondType.Flag.Computed;
+                key[key.length] = -1;
 
                 const seqIdB = label_seq_id.value(rbI);
 
@@ -234,18 +261,16 @@ function findBonds(unit: Unit.Atomic, props: BondComputationProps): IntraUnitBon
     }
 
     const canRemap = isWatery || (isDictionaryBased && isSequenced);
-    return getGraph(atomA, atomB, order, flags, atomCount, canRemap);
+    return getGraph(atomA, atomB, order, flags, key, atomCount, canRemap);
 }
 
 function computeIntraUnitBonds(unit: Unit.Atomic, props?: Partial<BondComputationProps>) {
     const p = { ...DefaultBondComputationProps, ...props };
-    if (p.noCompute || Model.isCoarseGrained(unit.model)) {
-        // TODO add function that only adds bonds defined in structConn of chemCompBond
-        //      and avoid using unit.lookup
+    if (p.noCompute || (Model.isCoarseGrained(unit.model) && !IndexPairBonds.Provider.get(unit.model) && !StructConn.isExhaustive(unit.model))) {
         return IntraUnitBonds.Empty;
     }
 
-    if (!p.forceCompute && IndexPairBonds.Provider.get(unit.model)!) {
+    if (!p.forceCompute && IndexPairBonds.Provider.get(unit.model)) {
         return findIndexPairBonds(unit);
     } else {
         return findBonds(unit, p);

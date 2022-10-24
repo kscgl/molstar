@@ -45,7 +45,7 @@ export class ViewportControls extends PluginUIComponent<ViewportControlsProps, V
 
     resetCamera = () => {
         PluginCommands.Camera.Reset(this.plugin, {});
-    }
+    };
 
     private toggle(panel: keyof ViewportControlsState) {
         return (e?: React.MouseEvent<HTMLButtonElement>) => {
@@ -59,35 +59,43 @@ export class ViewportControls extends PluginUIComponent<ViewportControlsProps, V
 
     toggleControls = () => {
         PluginCommands.Layout.Update(this.plugin, { state: { showControls: !this.plugin.layout.state.showControls } });
-    }
+    };
 
     toggleExpanded = () => {
         PluginCommands.Layout.Update(this.plugin, { state: { isExpanded: !this.plugin.layout.state.isExpanded } });
-    }
+    };
 
     toggleSpinning = () => {
         if (!this.plugin.canvas3d) return;
 
+        const trackball = this.plugin.canvas3d.props.trackball;
         PluginCommands.Canvas3D.SetSettings(this.plugin, {
-            settings: props => {
-                props.trackball.spin = !props.trackball.spin;
+            settings: {
+                trackball: {
+                    ...trackball,
+                    animate: trackball.animate.name === 'spin'
+                        ? { name: 'off', params: {} }
+                        : { name: 'spin', params: { speed: 1 } }
+                }
             }
         });
         this.setState({isSpinningActivated: !this.state.isSpinningActivated});
-        if (!this.plugin.canvas3d.props.trackball.spin) PluginCommands.Camera.Reset(this.plugin, {});
+        if (this.plugin.canvas3d.props.trackball.animate.name !== 'spin') {
+            PluginCommands.Camera.Reset(this.plugin, {});
+        }
     }
 
     setSettings = (p: { param: PD.Base<any>, name: string, value: any }) => {
         PluginCommands.Canvas3D.SetSettings(this.plugin, { settings: { [p.name]: p.value } });
-    }
+    };
 
     setLayout = (p: { param: PD.Base<any>, name: string, value: any }) => {
         PluginCommands.Layout.Update(this.plugin, { state: { [p.name]: p.value } });
-    }
+    };
 
     screenshot = () => {
         this.plugin.helpers.viewportScreenshot?.download();
-    }
+    };
 
     componentDidMount() {
         this.subscribe(this.plugin.events.canvas3d.settingsUpdated, () => this.forceUpdate());
@@ -101,7 +109,7 @@ export class ViewportControls extends PluginUIComponent<ViewportControlsProps, V
     onMouseMove = (e: React.MouseEvent) => {
         // ignore mouse moves when no button is held
         if (e.buttons === 0) e.stopPropagation();
-    }
+    };
 
     render() {
         return <div className={'msp-viewport-controls'} onMouseMove={this.onMouseMove}>

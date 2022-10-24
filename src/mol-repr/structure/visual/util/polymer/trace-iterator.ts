@@ -63,7 +63,7 @@ interface PolymerTraceElement {
 
 const SecStrucTypeNA = SecondaryStructureType.create(SecondaryStructureType.Flag.NA);
 
-function createPolymerTraceElement (structure: Structure, unit: Unit): PolymerTraceElement {
+function createPolymerTraceElement(structure: Structure, unit: Unit): PolymerTraceElement {
     return {
         center: StructureElement.Location.create(structure, unit),
         centerPrev: StructureElement.Location.create(structure, unit),
@@ -87,42 +87,42 @@ const tmpVecA = Vec3();
 const tmpVecB = Vec3();
 
 export class AtomicPolymerTraceIterator implements Iterator<PolymerTraceElement> {
-    private value: PolymerTraceElement
-    private polymerIt: SortedRanges.Iterator<ElementIndex, number>
-    private residueIt: Segmentation.SegmentIterator<ResidueIndex>
-    private polymerSegment: Segmentation.Segment<number>
-    private cyclicPolymerMap: Map<ResidueIndex, ResidueIndex>
-    private residueSegmentMin: ResidueIndex
-    private residueSegmentMax: ResidueIndex
-    private prevSecStrucType: SecondaryStructureType
-    private currSecStrucType: SecondaryStructureType
-    private nextSecStrucType: SecondaryStructureType
-    private prevCoarseBackbone: boolean
-    private currCoarseBackbone: boolean
-    private nextCoarseBackbone: boolean
-    private state: AtomicPolymerTraceIteratorState = AtomicPolymerTraceIteratorState.nextPolymer
-    private polymerRanges: SortedArray<ElementIndex>
-    private residueAtomSegments: Segmentation<ElementIndex, ResidueIndex>
-    private traceElementIndex: ArrayLike<ElementIndex>
-    private directionFromElementIndex: ArrayLike<ElementIndex | -1>
-    private directionToElementIndex: ArrayLike<ElementIndex | -1>
-    private moleculeType: ArrayLike<MoleculeType>
-    private atomicConformation: AtomicConformation
-    private secondaryStructure: SecondaryStructure | undefined
-    private helixOrientationCenters: ArrayLike<number> | undefined
+    private value: PolymerTraceElement;
+    private polymerIt: SortedRanges.Iterator<ElementIndex, number>;
+    private residueIt: Segmentation.SegmentIterator<ResidueIndex>;
+    private polymerSegment: Segmentation.Segment<number>;
+    private cyclicPolymerMap: Map<ResidueIndex, ResidueIndex>;
+    private residueSegmentMin: ResidueIndex;
+    private residueSegmentMax: ResidueIndex;
+    private prevSecStrucType: SecondaryStructureType;
+    private currSecStrucType: SecondaryStructureType;
+    private nextSecStrucType: SecondaryStructureType;
+    private prevCoarseBackbone: boolean;
+    private currCoarseBackbone: boolean;
+    private nextCoarseBackbone: boolean;
+    private state: AtomicPolymerTraceIteratorState = AtomicPolymerTraceIteratorState.nextPolymer;
+    private polymerRanges: SortedArray<ElementIndex>;
+    private residueAtomSegments: Segmentation<ElementIndex, ResidueIndex>;
+    private traceElementIndex: ArrayLike<ElementIndex>;
+    private directionFromElementIndex: ArrayLike<ElementIndex | -1>;
+    private directionToElementIndex: ArrayLike<ElementIndex | -1>;
+    private moleculeType: ArrayLike<MoleculeType>;
+    private atomicConformation: AtomicConformation;
+    private secondaryStructure: SecondaryStructure | undefined;
+    private helixOrientationCenters: ArrayLike<number> | undefined;
 
-    private p0 = Vec3()
-    private p1 = Vec3()
-    private p2 = Vec3()
-    private p3 = Vec3()
-    private p4 = Vec3()
-    private p5 = Vec3()
-    private p6 = Vec3()
+    private p0 = Vec3();
+    private p1 = Vec3();
+    private p2 = Vec3();
+    private p3 = Vec3();
+    private p4 = Vec3();
+    private p5 = Vec3();
+    private p6 = Vec3();
 
-    private d01 = Vec3()
-    private d12 = Vec3()
-    private d23 = Vec3()
-    private d34 = Vec3()
+    private d01 = Vec3();
+    private d12 = Vec3();
+    private d23 = Vec3();
+    private d34 = Vec3();
 
     hasNext: boolean = false;
 
@@ -289,7 +289,7 @@ export class AtomicPolymerTraceIterator implements Iterator<PolymerTraceElement>
                         Vec3.copy(this.p0, this.p3);
                         Vec3.copy(this.p1, this.p3);
                         Vec3.copy(this.p2, this.p3);
-                    } else if(isHelixPrev1) {
+                    } else if (isHelixPrev1) {
                         Vec3.scale(tmpDir, Vec3.sub(tmpDir, this.p2, this.p3), 2);
                         Vec3.add(this.p2, this.p3, tmpDir);
                         Vec3.add(this.p1, this.p2, tmpDir);
@@ -299,7 +299,7 @@ export class AtomicPolymerTraceIterator implements Iterator<PolymerTraceElement>
                     if (isHelix) {
                         Vec3.copy(this.p0, this.p2);
                         Vec3.copy(this.p1, this.p2);
-                    } else if(isHelixPrev2) {
+                    } else if (isHelixPrev2) {
                         Vec3.scale(tmpDir, Vec3.sub(tmpDir, this.p1, this.p2), 2);
                         Vec3.add(this.p1, this.p2, tmpDir);
                         Vec3.add(this.p0, this.p1, tmpDir);
@@ -307,7 +307,7 @@ export class AtomicPolymerTraceIterator implements Iterator<PolymerTraceElement>
                 } else if (isHelix !== isHelixPrev3) {
                     if (isHelix) {
                         Vec3.copy(this.p0, this.p1);
-                    } else if(isHelixPrev3) {
+                    } else if (isHelixPrev3) {
                         Vec3.scale(tmpDir, Vec3.sub(tmpDir, this.p0, this.p1), 2);
                         Vec3.add(this.p0, this.p1, tmpDir);
                     }
@@ -318,7 +318,7 @@ export class AtomicPolymerTraceIterator implements Iterator<PolymerTraceElement>
                         Vec3.copy(this.p4, this.p3);
                         Vec3.copy(this.p5, this.p3);
                         Vec3.copy(this.p6, this.p3);
-                    } else if(isHelixNext1) {
+                    } else if (isHelixNext1) {
                         Vec3.scale(tmpDir, Vec3.sub(tmpDir, this.p4, this.p3), 2);
                         Vec3.add(this.p4, this.p3, tmpDir);
                         Vec3.add(this.p5, this.p4, tmpDir);
@@ -328,7 +328,7 @@ export class AtomicPolymerTraceIterator implements Iterator<PolymerTraceElement>
                     if (isHelix) {
                         Vec3.copy(this.p5, this.p4);
                         Vec3.copy(this.p6, this.p4);
-                    } else if(isHelixNext2) {
+                    } else if (isHelixNext2) {
                         Vec3.scale(tmpDir, Vec3.sub(tmpDir, this.p5, this.p4), 2);
                         Vec3.add(this.p5, this.p4, tmpDir);
                         Vec3.add(this.p6, this.p5, tmpDir);
@@ -336,7 +336,7 @@ export class AtomicPolymerTraceIterator implements Iterator<PolymerTraceElement>
                 } else if (isHelix !== isHelixNext3) {
                     if (isHelix) {
                         Vec3.copy(this.p6, this.p5);
-                    } else if(isHelixNext3) {
+                    } else if (isHelixNext3) {
                         Vec3.scale(tmpDir, Vec3.sub(tmpDir, this.p6, this.p5), 2);
                         Vec3.add(this.p6, this.p5, tmpDir);
                     }
@@ -428,12 +428,12 @@ export class AtomicPolymerTraceIterator implements Iterator<PolymerTraceElement>
 const enum CoarsePolymerTraceIteratorState { nextPolymer, nextElement }
 
 export class CoarsePolymerTraceIterator implements Iterator<PolymerTraceElement> {
-    private value: PolymerTraceElement
-    private polymerIt: SortedRanges.Iterator<ElementIndex, ResidueIndex>
-    private polymerSegment: Segmentation.Segment<ResidueIndex>
-    private state: CoarsePolymerTraceIteratorState = CoarsePolymerTraceIteratorState.nextPolymer
-    private conformation: CoarseSphereConformation | CoarseGaussianConformation
-    private elementIndex: number
+    private value: PolymerTraceElement;
+    private polymerIt: SortedRanges.Iterator<ElementIndex, ResidueIndex>;
+    private polymerSegment: Segmentation.Segment<ResidueIndex>;
+    private state: CoarsePolymerTraceIteratorState = CoarsePolymerTraceIteratorState.nextPolymer;
+    private conformation: CoarseSphereConformation | CoarseGaussianConformation;
+    private elementIndex: number;
     hasNext: boolean = false;
 
     private getElementIndex(elementIndex: number) {

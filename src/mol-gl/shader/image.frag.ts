@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2020-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -11,7 +11,6 @@ precision highp int;
 #include read_from_texture
 #include common_frag_params
 #include common_clip
-#include wboit_params
 
 uniform vec2 uImageTexDim;
 uniform sampler2D tImageTex;
@@ -100,37 +99,67 @@ void main() {
     if (imageData.a > 0.9) imageData.a = 1.0;
 
     float fragmentDepth = gl_FragCoord.z;
-    bool interior = false;
 
     #if defined(dRenderVariant_pick)
         if (imageData.a < 0.3)
             discard;
-
-        #if defined(dRenderVariant_pickObject)
-            gl_FragColor = vec4(encodeFloatRGB(float(uObjectId)), 1.0);
-        #elif defined(dRenderVariant_pickInstance)
-            gl_FragColor = vec4(encodeFloatRGB(vInstance), 1.0);
-        #elif defined(dRenderVariant_pickGroup)
-            gl_FragColor = vec4(texture2D(tGroupTex, vUv).rgb, 1.0);
+        #ifdef requiredDrawBuffers
+            gl_FragColor = vec4(packIntToRGB(float(uObjectId)), 1.0);
+            gl_FragData[1] = vec4(packIntToRGB(vInstance), 1.0);
+            gl_FragData[2] = vec4(texture2D(tGroupTex, vUv).rgb, 1.0);
+            gl_FragData[3] = packDepthToRGBA(gl_FragCoord.z);
+        #else
+            gl_FragColor = vColor;
+            if (uPickType == 1) {
+                gl_FragColor = vec4(packIntToRGB(float(uObjectId)), 1.0);
+            } else if (uPickType == 2) {
+                gl_FragColor = vec4(packIntToRGB(vInstance), 1.0);
+            } else {
+                gl_FragColor = vec4(texture2D(tGroupTex, vUv).rgb, 1.0);
+            }
         #endif
     #elif defined(dRenderVariant_depth)
         if (imageData.a < 0.05)
             discard;
-
         gl_FragColor = packDepthToRGBA(gl_FragCoord.z);
+    #elif defined(dRenderVariant_marking)
+        float marker = uMarker;
+        if (uMarker == -1.0) {
+            float group = unpackRGBToInt(texture2D(tGroupTex, vUv).rgb);
+            marker = readFromTexture(tMarker, vInstance * float(uGroupCount) + group, uMarkerTexDim).a;
+            marker = floor(marker * 255.0 + 0.5); // rounding required to work on some cards on win
+        }
+        if (uMarkingType == 1) {
+            if (marker > 0.0 || imageData.a < 0.05)
+                discard;
+            gl_FragColor = packDepthToRGBA(gl_FragCoord.z);
+        } else {
+            if (marker == 0.0 || imageData.a < 0.05)
+                discard;
+            float depthTest = 1.0;
+            if (uMarkingDepthTest) {
+                depthTest = (fragmentDepth >= getDepthPacked(gl_FragCoord.xy / uDrawingBufferSize)) ? 1.0 : 0.0;
+            }
+            bool isHighlight = intMod(marker, 2.0) > 0.1;
+            gl_FragColor = vec4(0.0, depthTest, isHighlight ? 1.0 : 0.0, 1.0);
+        }
     #elif defined(dRenderVariant_color)
         if (imageData.a < 0.05)
             discard;
-
         gl_FragColor = imageData;
         gl_FragColor.a *= uAlpha;
 
-        float group = decodeFloatRGB(texture2D(tGroupTex, vUv).rgb);
-        float vMarker = readFromTexture(tMarker, vInstance * float(uGroupCount) + group, uMarkerTexDim).a;
+        float marker = uMarker;
+        if (uMarker == -1.0) {
+            float group = unpackRGBToInt(texture2D(tGroupTex, vUv).rgb);
+            marker = readFromTexture(tMarker, vInstance * float(uGroupCount) + group, uMarkerTexDim).a;
+            marker = floor(marker * 255.0 + 0.5); // rounding required to work on some cards on win
+        }
 
         #include apply_marker_color
         #include apply_fog
         #include wboit_write
+        #include dpoit_write
     #endif
 }
 `;

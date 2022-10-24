@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Copyright (c) 2017-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2017-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -35,20 +35,16 @@ async function runGenerateSchemaMmcif(name: string, fieldNamesPath: string, type
     const ihmDic = await parseCifText(fs.readFileSync(IHM_DIC_PATH, 'utf8')).run();
     if (ihmDic.isError) throw ihmDic;
 
-    await ensureCarbBranchDicAvailable();
-    const carbBranchDic = await parseCifText(fs.readFileSync(CARB_BRANCH_DIC_PATH, 'utf8')).run();
-    if (carbBranchDic.isError) throw carbBranchDic;
-
-    await ensureCarbCompDicAvailable();
-    const carbCompDic = await parseCifText(fs.readFileSync(CARB_COMP_DIC_PATH, 'utf8')).run();
-    if (carbCompDic.isError) throw carbCompDic;
+    await ensureMaDicAvailable();
+    const maDic = await parseCifText(fs.readFileSync(MA_DIC_PATH, 'utf8')).run();
+    if (maDic.isError) throw maDic;
 
     const mmcifDicVersion = getDicVersion(mmcifDic.result.blocks[0]);
     const ihmDicVersion = getDicVersion(ihmDic.result.blocks[0]);
-    const carbDicVersion = 'draft';
-    const version = `Dictionary versions: mmCIF ${mmcifDicVersion}, IHM ${ihmDicVersion}, CARB ${carbDicVersion}.`;
+    const maDicVersion = getDicVersion(maDic.result.blocks[0]);
+    const version = `Dictionary versions: mmCIF ${mmcifDicVersion}, IHM ${ihmDicVersion}, MA ${maDicVersion}.`;
 
-    const frames: CifFrame[] = [...mmcifDic.result.blocks[0].saveFrames, ...ihmDic.result.blocks[0].saveFrames, ...carbBranchDic.result.blocks[0].saveFrames, ...carbCompDic.result.blocks[0].saveFrames];
+    const frames: CifFrame[] = [...mmcifDic.result.blocks[0].saveFrames, ...ihmDic.result.blocks[0].saveFrames, ...maDic.result.blocks[0].saveFrames];
     const schema = generateSchema(frames);
 
     await runGenerateSchema(name, version, schema, fieldNamesPath, typescript, out, moldbImportPath, addAliases);
@@ -124,23 +120,22 @@ async function getFieldNamesFilter(fieldNamesPath: string): Promise<Filter> {
     const csvFile = parsed.result;
 
     const fieldNamesCol = csvFile.table.getColumn('0');
-    if (!fieldNamesCol) throw 'error getting fields columns';
+    if (!fieldNamesCol) throw new Error('error getting fields columns');
     const fieldNames = fieldNamesCol.toStringArray();
 
     const filter: Filter = {};
     fieldNames.forEach((name, i) => {
-        const [ category, field ] = name.split('.');
+        const [category, field] = name.split('.');
         // console.log(category, field)
-        if (!filter[ category ]) filter[ category ] = {};
-        filter[ category ][ field ] = true;
+        if (!filter[category]) filter[category] = {};
+        filter[category][field] = true;
     });
     return filter;
 }
 
 async function ensureMmcifDicAvailable() { await ensureDicAvailable(MMCIF_DIC_PATH, MMCIF_DIC_URL); }
 async function ensureIhmDicAvailable() { await ensureDicAvailable(IHM_DIC_PATH, IHM_DIC_URL); }
-async function ensureCarbBranchDicAvailable() { await ensureDicAvailable(CARB_BRANCH_DIC_PATH, CARB_BRANCH_DIC_URL); }
-async function ensureCarbCompDicAvailable() { await ensureDicAvailable(CARB_COMP_DIC_PATH, CARB_COMP_DIC_URL); }
+async function ensureMaDicAvailable() { await ensureDicAvailable(MA_DIC_PATH, MA_DIC_URL); }
 async function ensureCifCoreDicAvailable() {
     await ensureDicAvailable(CIF_CORE_DIC_PATH, CIF_CORE_DIC_URL);
     await ensureDicAvailable(CIF_CORE_ENUM_PATH, CIF_CORE_ENUM_URL);
@@ -165,10 +160,8 @@ const MMCIF_DIC_PATH = `${DIC_DIR}/mmcif_pdbx_v50.dic`;
 const MMCIF_DIC_URL = 'http://mmcif.wwpdb.org/dictionaries/ascii/mmcif_pdbx_v50.dic';
 const IHM_DIC_PATH = `${DIC_DIR}/ihm-extension.dic`;
 const IHM_DIC_URL = 'https://raw.githubusercontent.com/ihmwg/IHM-dictionary/master/ihm-extension.dic';
-const CARB_BRANCH_DIC_PATH = `${DIC_DIR}/entity_branch-extension.dic`;
-const CARB_BRANCH_DIC_URL = 'https://raw.githubusercontent.com/pdbxmmcifwg/carbohydrate-extension/master/dict/entity_branch-extension.dic';
-const CARB_COMP_DIC_PATH = `${DIC_DIR}/chem_comp-extension.dic`;
-const CARB_COMP_DIC_URL = 'https://raw.githubusercontent.com/pdbxmmcifwg/carbohydrate-extension/master/dict/chem_comp-extension.dic';
+const MA_DIC_PATH = `${DIC_DIR}/ma-extension.dic`;
+const MA_DIC_URL = 'https://raw.githubusercontent.com/ihmwg/ModelCIF/master/dist/mmcif_ma.dic';
 
 const CIF_CORE_DIC_PATH = `${DIC_DIR}/cif_core.dic`;
 const CIF_CORE_DIC_URL = 'https://raw.githubusercontent.com/COMCIFS/cif_core/master/cif_core.dic';
@@ -178,44 +171,44 @@ const CIF_CORE_ATTR_PATH = `${DIC_DIR}/templ_attr.cif`;
 const CIF_CORE_ATTR_URL = 'https://raw.githubusercontent.com/COMCIFS/cif_core/master/templ_attr.cif';
 
 const parser = new argparse.ArgumentParser({
-    addHelp: true,
+    add_help: true,
     description: 'Create schema from mmcif dictionary (v50 plus IHM and entity_branch extensions, downloaded from wwPDB)'
 });
-parser.addArgument([ '--preset', '-p' ], {
-    defaultValue: '',
+parser.add_argument('--preset', '-p', {
+    default: '',
     choices: ['', 'mmCIF', 'CCD', 'BIRD', 'CifCore'],
     help: 'Preset name'
 });
-parser.addArgument([ '--name', '-n' ], {
-    defaultValue: '',
+parser.add_argument('--name', '-n', {
+    default: '',
     help: 'Schema name'
 });
-parser.addArgument([ '--out', '-o' ], {
+parser.add_argument('--out', '-o', {
     help: 'Generated schema output path, if not given printed to stdout'
 });
-parser.addArgument([ '--targetFormat', '-tf' ], {
-    defaultValue: 'typescript-molstar',
+parser.add_argument('--targetFormat', '-tf', {
+    default: 'typescript-molstar',
     choices: ['typescript-molstar', 'json-internal'],
     help: 'Target format'
 });
-parser.addArgument([ '--dicPath', '-d' ], {
-    defaultValue: '',
+parser.add_argument('--dicPath', '-d', {
+    default: '',
     help: 'Path to dictionary'
 });
-parser.addArgument([ '--fieldNamesPath', '-fn' ], {
-    defaultValue: '',
+parser.add_argument('--fieldNamesPath', '-fn', {
+    default: '',
     help: 'Field names to include'
 });
-parser.addArgument([ '--forceDicDownload', '-f' ], {
-    action: 'storeTrue',
+parser.add_argument('--forceDicDownload', '-f', {
+    action: 'store_true',
     help: 'Force download of dictionaries'
 });
-parser.addArgument([ '--moldataImportPath', '-mip' ], {
-    defaultValue: 'molstar/lib/mol-data',
+parser.add_argument('--moldataImportPath', '-mip', {
+    default: 'molstar/lib/mol-data',
     help: 'mol-data import path (for typescript target only)'
 });
-parser.addArgument([ '--addAliases', '-aa' ], {
-    action: 'storeTrue',
+parser.add_argument('--addAliases', '-aa', {
+    action: 'store_true',
     help: 'Add field name/path aliases'
 });
 interface Args {
@@ -230,7 +223,7 @@ interface Args {
     moldataImportPath: string
     addAliases: boolean
 }
-const args: Args = parser.parseArgs();
+const args: Args = parser.parse_args();
 
 const FORCE_DIC_DOWNLOAD = args.forceDicDownload;
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -19,10 +19,12 @@ import { createEmptyOverpaint } from '../overpaint-data';
 import { createEmptyTransparency } from '../transparency-data';
 import { TextureMeshValues } from '../../../mol-gl/renderable/texture-mesh';
 import { calculateTransformBoundingSphere } from '../../../mol-gl/renderable/util';
-import { Texture } from '../../../mol-gl/webgl/texture';
+import { createNullTexture, Texture } from '../../../mol-gl/webgl/texture';
 import { Vec2, Vec4 } from '../../../mol-math/linear-algebra';
 import { createEmptyClipping } from '../clipping-data';
 import { NullLocation } from '../../../mol-model/location';
+import { createEmptySubstance } from '../substance-data';
+import { RenderableState } from '../../../mol-gl/renderable';
 
 export interface TextureMesh {
     readonly kind: 'texture-mesh',
@@ -36,17 +38,18 @@ export interface TextureMesh {
     readonly vertexTexture: ValueCell<Texture>,
     readonly groupTexture: ValueCell<Texture>,
     readonly normalTexture: ValueCell<Texture>,
+    readonly varyingGroup: ValueCell<boolean>,
     readonly doubleBuffer: TextureMesh.DoubleBuffer
 
     readonly boundingSphere: Sphere3D
 
-    meta?: unknown
+    readonly meta: { [k: string]: unknown }
 }
 
 export namespace TextureMesh {
     export class DoubleBuffer {
         private index = 0;
-        private textures: ({ vertex: Texture, group: Texture, normal: Texture } | undefined)[] = []
+        private textures: ({ vertex: Texture, group: Texture, normal: Texture } | undefined)[] = [];
 
         get() {
             return this.textures[this.index];
@@ -90,14 +93,20 @@ export namespace TextureMesh {
                 vertexTexture: ValueCell.create(vertexTexture),
                 groupTexture: ValueCell.create(groupTexture),
                 normalTexture: ValueCell.create(normalTexture),
+                varyingGroup: ValueCell.create(false),
                 doubleBuffer: new DoubleBuffer(),
                 boundingSphere: Sphere3D.clone(boundingSphere),
+                meta: {}
             };
         }
     }
 
     export function createEmpty(textureMesh?: TextureMesh): TextureMesh {
-        return {} as TextureMesh; // TODO
+        const vt = textureMesh ? textureMesh.vertexTexture.ref.value : createNullTexture();
+        const gt = textureMesh ? textureMesh.groupTexture.ref.value : createNullTexture();
+        const nt = textureMesh ? textureMesh.normalTexture.ref.value : createNullTexture();
+        const bs = textureMesh ? textureMesh.boundingSphere : Sphere3D();
+        return create(0, 0, vt, gt, nt, bs, textureMesh);
     }
 
     export const Params = {
@@ -107,6 +116,9 @@ export namespace TextureMesh {
         flatShaded: PD.Boolean(false, BaseGeometry.ShadingCategory),
         ignoreLight: PD.Boolean(false, BaseGeometry.ShadingCategory),
         xrayShaded: PD.Boolean(false, BaseGeometry.ShadingCategory),
+        transparentBackfaces: PD.Select('off', PD.arrayToOptions(['off', 'on', 'opaque']), BaseGeometry.ShadingCategory),
+        bumpFrequency: PD.Numeric(0, { min: 0, max: 10, step: 0.1 }, BaseGeometry.ShadingCategory),
+        bumpAmplitude: PD.Numeric(1, { min: 0, max: 5, step: 0.1 }, BaseGeometry.ShadingCategory),
     };
     export type Params = typeof Params
 
@@ -117,8 +129,8 @@ export namespace TextureMesh {
         createValuesSimple,
         updateValues,
         updateBoundingSphere,
-        createRenderableState: BaseGeometry.createRenderableState,
-        updateRenderableState: BaseGeometry.updateRenderableState,
+        createRenderableState,
+        updateRenderableState,
         createPositionIterator: () => LocationIterator(1, 1, 1, () => NullLocation)
     };
 
@@ -127,9 +139,12 @@ export namespace TextureMesh {
         const positionIt = Utils.createPositionIterator(textureMesh, transform);
 
         const color = createColors(locationIt, positionIt, theme.color);
-        const marker = createMarkers(instanceCount * groupCount);
+        const marker = props.instanceGranularity
+            ? createMarkers(instanceCount, 'instance')
+            : createMarkers(instanceCount * groupCount, 'groupInstance');
         const overpaint = createEmptyOverpaint();
         const transparency = createEmptyTransparency();
+        const substance = createEmptySubstance();
         const clipping = createEmptyClipping();
 
         const counts = { drawCount: textureMesh.vertexCount, vertexCount: textureMesh.vertexCount, groupCount, instanceCount };
@@ -138,10 +153,13 @@ export namespace TextureMesh {
         const boundingSphere = calculateTransformBoundingSphere(invariantBoundingSphere, transform.aTransform.ref.value, instanceCount);
 
         return {
+            dGeometryType: ValueCell.create('textureMesh'),
+
             uGeoTexDim: textureMesh.geoTextureDim,
             tPosition: textureMesh.vertexTexture,
             tGroup: textureMesh.groupTexture,
             tNormal: textureMesh.normalTexture,
+            dVaryingGroup: textureMesh.varyingGroup,
 
             boundingSphere: ValueCell.create(boundingSphere),
             invariantBoundingSphere: ValueCell.create(invariantBoundingSphere),
@@ -151,16 +169,21 @@ export namespace TextureMesh {
             ...marker,
             ...overpaint,
             ...transparency,
+            ...substance,
             ...clipping,
             ...transform,
 
             ...BaseGeometry.createValues(props, counts),
-            dDoubleSided: ValueCell.create(props.doubleSided),
+            uDoubleSided: ValueCell.create(props.doubleSided),
             dFlatShaded: ValueCell.create(props.flatShaded),
             dFlipSided: ValueCell.create(props.flipSided),
             dIgnoreLight: ValueCell.create(props.ignoreLight),
             dXrayShaded: ValueCell.create(props.xrayShaded),
-            dGeoTexture: ValueCell.create(true),
+            dTransparentBackfaces: ValueCell.create(props.transparentBackfaces),
+            uBumpFrequency: ValueCell.create(props.bumpFrequency),
+            uBumpAmplitude: ValueCell.create(props.bumpAmplitude),
+
+            meta: ValueCell.create(textureMesh.meta),
         };
     }
 
@@ -172,11 +195,14 @@ export namespace TextureMesh {
 
     function updateValues(values: TextureMeshValues, props: PD.Values<Params>) {
         BaseGeometry.updateValues(values, props);
-        ValueCell.updateIfChanged(values.dDoubleSided, props.doubleSided);
+        ValueCell.updateIfChanged(values.uDoubleSided, props.doubleSided);
         ValueCell.updateIfChanged(values.dFlatShaded, props.flatShaded);
         ValueCell.updateIfChanged(values.dFlipSided, props.flipSided);
         ValueCell.updateIfChanged(values.dIgnoreLight, props.ignoreLight);
         ValueCell.updateIfChanged(values.dXrayShaded, props.xrayShaded);
+        ValueCell.updateIfChanged(values.dTransparentBackfaces, props.transparentBackfaces);
+        ValueCell.updateIfChanged(values.uBumpFrequency, props.bumpFrequency);
+        ValueCell.updateIfChanged(values.uBumpAmplitude, props.bumpAmplitude);
     }
 
     function updateBoundingSphere(values: TextureMeshValues, textureMesh: TextureMesh) {
@@ -190,5 +216,17 @@ export namespace TextureMesh {
             ValueCell.update(values.invariantBoundingSphere, invariantBoundingSphere);
             ValueCell.update(values.uInvariantBoundingSphere, Vec4.fromSphere(values.uInvariantBoundingSphere.ref.value, invariantBoundingSphere));
         }
+    }
+
+    function createRenderableState(props: PD.Values<Params>): RenderableState {
+        const state = BaseGeometry.createRenderableState(props);
+        updateRenderableState(state, props);
+        return state;
+    }
+
+    function updateRenderableState(state: RenderableState, props: PD.Values<Params>) {
+        BaseGeometry.updateRenderableState(state, props);
+        state.opaque = state.opaque && !props.xrayShaded;
+        state.writeDepth = state.opaque;
     }
 }

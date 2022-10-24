@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017-2019 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2017-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -8,9 +8,9 @@ import { Database, Filter, Column } from './schema';
 import { indentString } from '../../../mol-util/string';
 import { FieldPath } from '../../../mol-io/reader/cif/schema';
 
-function header (name: string, info: string, moldataImportPath: string) {
+function header(name: string, info: string, moldataImportPath: string) {
     return `/**
- * Copyright (c) 2017-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2017-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * Code-generated '${name}' schema file. ${info}
  *
@@ -22,7 +22,7 @@ import { Database, Column } from '${moldataImportPath}/db';
 import Schema = Column.Schema;`;
 }
 
-function footer (name: string) {
+function footer(name: string) {
     return `
 export type ${name}_Schema = typeof ${name}_Schema;
 export interface ${name}_Database extends Database<${name}_Schema> {};`;
@@ -35,13 +35,17 @@ function getTypeShorthands(schema: Database, fields?: Filter) {
         const { columns } = schema.tables[table];
         Object.keys(columns).forEach(columnName => {
             if (fields && !fields[table][columnName]) return;
-            types.add(schema.tables[table].columns[columnName].type);
+            const col = schema.tables[table].columns[columnName];
+            if (col.type === 'enum') types.add(col.subType);
+            types.add(col.type);
         });
     });
     const shorthands: string[] = [];
     types.forEach(type => {
         switch (type) {
             case 'str': shorthands.push('const str = Schema.str;'); break;
+            case 'ustr': shorthands.push('const ustr = Schema.ustr;'); break;
+            case 'lstr': shorthands.push('const lstr = Schema.lstr;'); break;
             case 'int': shorthands.push('const int = Schema.int;'); break;
             case 'float': shorthands.push('const float = Schema.float;'); break;
             case 'coord': shorthands.push('const coord = Schema.coord;'); break;
@@ -89,7 +93,7 @@ function doc(description: string, spacesCount: number) {
     ].join('\n');
 }
 
-export function generate (name: string, info: string, schema: Database, fields: Filter | undefined, moldataImportPath: string, addAliases: boolean) {
+export function generate(name: string, info: string, schema: Database, fields: Filter | undefined, moldataImportPath: string, addAliases: boolean) {
     const codeLines: string[] = [];
 
     if (fields) {
@@ -128,7 +132,7 @@ export function generate (name: string, info: string, schema: Database, fields: 
         codeLines.push('');
         codeLines.push(`export const ${name}_Aliases = {`);
         Object.keys(schema.aliases).forEach(path => {
-            const [ table, columnName ] = path.split('.');
+            const [table, columnName] = path.split('.');
             if (fields && !fields[table]) return;
             if (fields && !fields[table][columnName]) return;
 

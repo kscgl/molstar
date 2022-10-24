@@ -77,9 +77,9 @@ export class VolumeStreamingControls extends CollapsableControls<{}, VolumeStrea
         const rootCell = root && pivot.cell.parent.cells.get(root);
 
         const simpleApply = rootCell && rootCell.status === 'error'
-            ? { header: 'Error enabling', icon: ErrorSvg, title: rootCell.errorText }
+            ? { header: !!rootCell.errorText && rootCell.errorText?.includes('404') ? 'No Density Data Available' : 'Error Enabling', icon: ErrorSvg, title: rootCell.errorText }
             : rootCell && rootCell.obj?.data.entries.length === 0
-                ? { header: 'Error enabling', icon: ErrorSvg, title: 'No entry for streaming found' }
+                ? { header: 'Error Enabling', icon: ErrorSvg, title: 'No Entry for Streaming Found' }
                 : { header: 'Enable', icon: CheckSvg, title: 'Enable' };
 
         return <ApplyActionControl state={pivot.cell.parent} action={InitVolumeStreaming} initiallyCollapsed={true} nodeRef={pivot.cell.transform.ref} simpleApply={simpleApply} />;
@@ -142,7 +142,7 @@ export class VolumeSourceControls extends CollapsableControls<{}, VolumeSourceCo
             value: ref
         };
         return item;
-    }
+    };
 
     get hierarchyItems() {
         const mng = this.plugin.managers.volume.hierarchy;
@@ -195,7 +195,7 @@ export class VolumeSourceControls extends CollapsableControls<{}, VolumeSourceCo
         } else {
             this.lazyLoad(current.cell);
         }
-    }
+    };
 
     private async lazyLoad(cell: StateObjectCell<PluginStateObject.Volume.Lazy>) {
         const { url, isBinary, format, entryId, isovalues } = cell.obj!.data;
@@ -235,7 +235,7 @@ export class VolumeSourceControls extends CollapsableControls<{}, VolumeSourceCo
         if (!item) return;
         this.setState({ show: void 0 });
         (item.value as any)();
-    }
+    };
 
     toggleHierarchy = () => this.setState({ show: this.state.show !== 'hierarchy' ? 'hierarchy' : void 0 });
     toggleAddRepr = () => this.setState({ show: this.state.show !== 'add-repr' ? 'add-repr' : void 0 });
@@ -263,7 +263,7 @@ export class VolumeSourceControls extends CollapsableControls<{}, VolumeSourceCo
 type VolumeRepresentationEntryActions = 'update'
 
 class VolumeRepresentationControls extends PurePluginUIComponent<{ representation: VolumeRepresentationRef }, { action?: VolumeRepresentationEntryActions }> {
-    state = { action: void 0 as VolumeRepresentationEntryActions | undefined }
+    state = { action: void 0 as VolumeRepresentationEntryActions | undefined };
 
     componentDidMount() {
         this.subscribe(this.plugin.state.events.cell.stateUpdated, e => {
@@ -271,13 +271,13 @@ class VolumeRepresentationControls extends PurePluginUIComponent<{ representatio
         });
     }
 
-    remove = () => this.plugin.managers.volume.hierarchy.remove([ this.props.representation ], true);
+    remove = () => this.plugin.managers.volume.hierarchy.remove([this.props.representation], true);
 
     toggleVisible = (e: React.MouseEvent<HTMLElement>) => {
         e.preventDefault();
         e.currentTarget.blur();
-        this.plugin.managers.volume.hierarchy.toggleVisibility([ this.props.representation ]);
-    }
+        this.plugin.managers.volume.hierarchy.toggleVisibility([this.props.representation]);
+    };
 
     toggleUpdate = () => this.setState({ action: this.state.action === 'update' ? void 0 : 'update' });
 
@@ -285,19 +285,19 @@ class VolumeRepresentationControls extends PurePluginUIComponent<{ representatio
         e.preventDefault();
         if (!this.props.representation.cell.parent) return;
         PluginCommands.Interactivity.Object.Highlight(this.plugin, { state: this.props.representation.cell.parent!, ref: this.props.representation.cell.transform.ref });
-    }
+    };
 
     clearHighlight = (e: React.MouseEvent<HTMLElement>) => {
         e.preventDefault();
         PluginCommands.Interactivity.ClearHighlights(this.plugin);
-    }
+    };
 
     focus = () => {
         const repr = this.props.representation;
         const objects = this.props.representation.cell.obj?.data.repr.renderObjects;
         if (repr.cell.state.isHidden) this.plugin.managers.volume.hierarchy.toggleVisibility([this.props.representation], 'show');
         this.plugin.managers.camera.focusRenderObjects(objects, { extraRadius: 1 });
-    }
+    };
 
     render() {
         const repr = this.props.representation.cell;

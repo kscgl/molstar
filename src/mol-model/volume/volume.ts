@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2020-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -15,6 +15,7 @@ import { ModelFormat } from '../../mol-model-formats/format';
 import { CustomProperties } from '../custom-property';
 import { ParamDefinition as PD } from '../../mol-util/param-definition';
 import { toPrecision } from '../../mol-util/number';
+import { DscifFormat } from '../../mol-model-formats/volume/density-server';
 
 export interface Volume {
     readonly label?: string
@@ -84,7 +85,24 @@ export namespace Volume {
         }
     }
 
-    const defaultStats: Grid['stats'] = { min: -1, max: 1, mean: 0, sigma: 0.1  };
+    // Converts iso value to relative if using downsample VolumeServer data
+    export function adjustedIsoValue(volume: Volume, value: number, kind: 'absolute' | 'relative') {
+        if (kind === 'relative') return IsoValue.relative(value);
+
+        const absolute = IsoValue.absolute(value);
+        if (DscifFormat.is(volume.sourceData)) {
+            const stats = {
+                min: volume.sourceData.data.volume_data_3d_info.min_source.value(0),
+                max: volume.sourceData.data.volume_data_3d_info.max_source.value(0),
+                mean: volume.sourceData.data.volume_data_3d_info.mean_source.value(0),
+                sigma: volume.sourceData.data.volume_data_3d_info.sigma_source.value(0),
+            };
+            return Volume.IsoValue.toRelative(absolute, stats);
+        }
+        return absolute;
+    }
+
+    const defaultStats: Grid['stats'] = { min: -1, max: 1, mean: 0, sigma: 0.1 };
     export function createIsoValueParam(defaultValue: Volume.IsoValue, stats?: Grid['stats']) {
         const sts = stats || defaultStats;
         const { min, max, mean, sigma } = sts;
@@ -108,12 +126,12 @@ export namespace Volume {
                 'absolute': PD.Converted(
                     (v: Volume.IsoValue) => Volume.IsoValue.toAbsolute(v, Grid.One.stats).absoluteValue,
                     (v: number) => Volume.IsoValue.absolute(v),
-                    PD.Numeric(mean, { min, max, step: toPrecision(sigma / 100, 2) })
+                    PD.Numeric(mean, { min, max, step: toPrecision(sigma / 100, 2) }, { immediateUpdate: true })
                 ),
                 'relative': PD.Converted(
                     (v: Volume.IsoValue) => Volume.IsoValue.toRelative(v, Grid.One.stats).relativeValue,
                     (v: number) => Volume.IsoValue.relative(v),
-                    PD.Numeric(Math.min(1, relMax), { min: relMin, max: relMax, step: toPrecision(Math.round(((max - min) / sigma)) / 100, 2) })
+                    PD.Numeric(Math.min(1, relMax), { min: relMin, max: relMax, step: toPrecision(Math.round(((max - min) / sigma)) / 100, 2) }, { immediateUpdate: true })
                 )
             },
             (v: Volume.IsoValue) => v.kind === 'absolute' ? 'absolute' : 'relative',
@@ -201,4 +219,14 @@ export namespace Volume {
             return Sphere3D.expand(bs, bs, Mat4.getMaxScaleOnAxis(transform) * 10);
         }
     }
+
+    export type PickingGranularity = 'volume' | 'object' | 'voxel';
+    export const PickingGranularity = {
+        set(volume: Volume, granularity: PickingGranularity) {
+            volume._propertyData['__picking_granularity__'] = granularity;
+        },
+        get(volume: Volume): PickingGranularity {
+            return volume._propertyData['__picking_granularity__'] ?? 'voxel';
+        }
+    };
 }

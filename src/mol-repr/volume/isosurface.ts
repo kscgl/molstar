@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -28,6 +28,8 @@ import { extractIsosurface } from '../../mol-gl/compute/marching-cubes/isosurfac
 import { WebGLContext } from '../../mol-gl/webgl/context';
 import { CustomPropertyDescriptor } from '../../mol-model/custom-property';
 import { Texture } from '../../mol-gl/webgl/texture';
+import { BaseGeometry } from '../../mol-geo/geometry/base';
+import { ValueCell } from '../../mol-util/value-cell';
 
 export const VolumeIsosurfaceParams = {
     isoValue: Volume.IsoValueParam
@@ -42,6 +44,10 @@ function gpuSupport(webgl: WebGLContext) {
 const Padding = 1;
 
 function suitableForGpu(volume: Volume, webgl: WebGLContext) {
+    // small volumes are about as fast or faster on CPU vs integrated GPU
+    if (volume.grid.cells.data.length < Math.pow(10, 3)) return false;
+    // the GPU is much more memory contraint, especially true for integrated GPUs,
+    // fallback to CPU for large volumes
     const gridDim = volume.grid.cells.space.dimensions as Vec3;
     const { powerOfTwoSize } = getVolumeTexture2dLayout(gridDim, Padding);
     return powerOfTwoSize <= webgl.maxTextureSize / 2;
@@ -60,8 +66,16 @@ function getLoci(volume: Volume, props: VolumeIsosurfaceProps) {
 
 function getIsosurfaceLoci(pickingId: PickingId, volume: Volume, props: VolumeIsosurfaceProps, id: number) {
     const { objectId, groupId } = pickingId;
+
     if (id === objectId) {
-        return Volume.Cell.Loci(volume, Interval.ofSingleton(groupId as Volume.CellIndex));
+        const granularity = Volume.PickingGranularity.get(volume);
+        if (granularity === 'volume') {
+            return Volume.Loci(volume);
+        } else if (granularity === 'object') {
+            return Volume.Isosurface.Loci(volume, props.isoValue);
+        } else {
+            return Volume.Cell.Loci(volume, Interval.ofSingleton(groupId as Volume.CellIndex));
+        }
     }
     return EmptyLoci;
 }
@@ -89,6 +103,9 @@ export async function createVolumeIsosurfaceMesh(ctx: VisualContext, volume: Vol
         // 2nd arg means not to split triangles based on group id. Splitting triangles
         // is too expensive if each cell has its own group id as is the case here.
         Mesh.uniformTriangleGroup(surface, false);
+        ValueCell.updateIfChanged(surface.varyingGroup, false);
+    } else {
+        ValueCell.updateIfChanged(surface.varyingGroup, true);
     }
 
     surface.setBoundingSphere(Volume.getBoundingSphere(volume));
@@ -130,7 +147,6 @@ namespace VolumeIsosurfaceTexture {
     export function get(volume: Volume, webgl: WebGLContext) {
         const { resources } = webgl;
 
-
         const transform = Grid.getGridToCartesianTransform(volume.grid);
         const gridDimension = Vec3.clone(volume.grid.cells.space.dimensions as Vec3);
         const { width, height, powerOfTwoSize: texDim } = getVolumeTexture2dLayout(gridDimension, Padding);
@@ -168,6 +184,10 @@ namespace VolumeIsosurfaceTexture {
 async function createVolumeIsosurfaceTextureMesh(ctx: VisualContext, volume: Volume, theme: Theme, props: VolumeIsosurfaceProps, textureMesh?: TextureMesh) {
     if (!ctx.webgl) throw new Error('webgl context required to create volume isosurface texture-mesh');
 
+    if (volume.grid.cells.data.length <= 1) {
+        return TextureMesh.createEmpty(textureMesh);
+    }
+
     const { max, min } = volume.grid.stats;
     const diff = max - min;
     const value = Volume.IsoValue.toAbsolute(props.isoValue, volume.grid.stats).absoluteValue;
@@ -175,10 +195,12 @@ async function createVolumeIsosurfaceTextureMesh(ctx: VisualContext, volume: Vol
 
     const { texture, gridDimension, gridTexDim, gridTexScale, transform } = VolumeIsosurfaceTexture.get(volume, ctx.webgl);
 
+    const axisOrder = volume.grid.cells.space.axisOrderSlowToFast as Vec3;
     const buffer = textureMesh?.doubleBuffer.get();
-    const gv = extractIsosurface(ctx.webgl, texture, gridDimension, gridTexDim, gridTexScale, transform, isoLevel, value < 0, false, buffer?.vertex, buffer?.group, buffer?.normal);
+    const gv = extractIsosurface(ctx.webgl, texture, gridDimension, gridTexDim, gridTexScale, transform, isoLevel, value < 0, false, axisOrder, true, buffer?.vertex, buffer?.group, buffer?.normal);
 
-    const surface = TextureMesh.create(gv.vertexCount, 1, gv.vertexTexture, gv.groupTexture, gv.normalTexture, Volume.getBoundingSphere(volume), textureMesh);
+    const groupCount = volume.grid.cells.data.length;
+    const surface = TextureMesh.create(gv.vertexCount, groupCount, gv.vertexTexture, gv.groupTexture, gv.normalTexture, Volume.getBoundingSphere(volume), textureMesh);
 
     return surface;
 }
@@ -260,6 +282,7 @@ export const IsosurfaceParams = {
     ...IsosurfaceMeshParams,
     ...IsosurfaceWireframeParams,
     visuals: PD.MultiSelect(['solid'], PD.objectToOptions(IsosurfaceVisuals)),
+    bumpFrequency: PD.Numeric(1, { min: 0, max: 10, step: 0.1 }, BaseGeometry.ShadingCategory),
 };
 export type IsosurfaceParams = typeof IsosurfaceParams
 export function getIsosurfaceParams(ctx: ThemeRegistryContext, volume: Volume) {

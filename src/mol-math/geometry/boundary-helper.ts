@@ -12,12 +12,12 @@ import { Box3D } from './primitives/box3d';
 // implementing http://www.ep.liu.se/ecp/034/009/ecp083409.pdf
 
 export class BoundaryHelper {
-    private dir: Vec3[]
+    private dir: Vec3[];
 
-    private minDist: number[] = []
-    private maxDist: number[] = []
-    private extrema: Vec3[] = []
-    centroidHelper = new CentroidHelper()
+    private minDist: number[] = [];
+    private maxDist: number[] = [];
+    private extrema: Vec3[] = [];
+    centroidHelper = new CentroidHelper();
 
     private computeExtrema(i: number, p: Vec3) {
         const d = Vec3.dot(this.dir[i], p);
@@ -121,10 +121,10 @@ type EposQuality = '6' | '14' | '26' | '98'
 function getEposDir(quality: EposQuality) {
     let dir: number[][];
     switch (quality) {
-        case '6': dir = [ ...Type001 ]; break;
-        case '14': dir = [ ...Type001, ...Type111 ]; break;
-        case '26': dir = [ ...Type001, ...Type111, ...Type011 ]; break;
-        case '98': dir = [ ...Type001, ...Type111, ...Type011, ...Type012, ...Type112, ...Type122 ]; break;
+        case '6': dir = [...Type001]; break;
+        case '14': dir = [...Type001, ...Type111]; break;
+        case '26': dir = [...Type001, ...Type111, ...Type011]; break;
+        case '98': dir = [...Type001, ...Type111, ...Type011, ...Type012, ...Type112, ...Type122]; break;
     }
     return dir.map(a => {
         const v = Vec3.create(a[0], a[1], a[2]);

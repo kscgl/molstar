@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -41,10 +41,21 @@ import { parseXyz } from '../../mol-io/reader/xyz/parser';
 import { trajectoryFromXyz } from '../../mol-model-formats/structure/xyz';
 import { parseSdf } from '../../mol-io/reader/sdf/parser';
 import { trajectoryFromSdf } from '../../mol-model-formats/structure/sdf';
+import { assertUnreachable } from '../../mol-util/type-helpers';
+import { parseTrr } from '../../mol-io/reader/trr/parser';
+import { coordinatesFromTrr } from '../../mol-model-formats/structure/trr';
+import { parseNctraj } from '../../mol-io/reader/nctraj/parser';
+import { coordinatesFromNctraj } from '../../mol-model-formats/structure/nctraj';
+import { topologyFromPrmtop } from '../../mol-model-formats/structure/prmtop';
+import { topologyFromTop } from '../../mol-model-formats/structure/top';
 
 export { CoordinatesFromDcd };
 export { CoordinatesFromXtc };
+export { CoordinatesFromTrr };
+export { CoordinatesFromNctraj };
 export { TopologyFromPsf };
+export { TopologyFromPrmtop };
+export { TopologyFromTop };
 export { TrajectoryFromModelAndCoordinates };
 export { TrajectoryFromBlob };
 export { TrajectoryFromMmCif };
@@ -87,7 +98,7 @@ const CoordinatesFromDcd = PluginStateTransform.BuiltIn({
     }
 });
 
-type CoordinatesFromXtc = typeof CoordinatesFromDcd
+type CoordinatesFromXtc = typeof CoordinatesFromXtc
 const CoordinatesFromXtc = PluginStateTransform.BuiltIn({
     name: 'coordinates-from-xtc',
     display: { name: 'Parse XTC', description: 'Parse XTC binary data.' },
@@ -104,16 +115,80 @@ const CoordinatesFromXtc = PluginStateTransform.BuiltIn({
     }
 });
 
+type CoordinatesFromTrr = typeof CoordinatesFromTrr
+const CoordinatesFromTrr = PluginStateTransform.BuiltIn({
+    name: 'coordinates-from-trr',
+    display: { name: 'Parse TRR', description: 'Parse TRR binary data.' },
+    from: [SO.Data.Binary],
+    to: SO.Molecule.Coordinates
+})({
+    apply({ a }) {
+        return Task.create('Parse TRR', async ctx => {
+            const parsed = await parseTrr(a.data).runInContext(ctx);
+            if (parsed.isError) throw new Error(parsed.message);
+            const coordinates = await coordinatesFromTrr(parsed.result).runInContext(ctx);
+            return new SO.Molecule.Coordinates(coordinates, { label: a.label, description: 'Coordinates' });
+        });
+    }
+});
+
+type CoordinatesFromNctraj = typeof CoordinatesFromNctraj
+const CoordinatesFromNctraj = PluginStateTransform.BuiltIn({
+    name: 'coordinates-from-nctraj',
+    display: { name: 'Parse NCTRAJ', description: 'Parse NCTRAJ binary data.' },
+    from: [SO.Data.Binary],
+    to: SO.Molecule.Coordinates
+})({
+    apply({ a }) {
+        return Task.create('Parse NCTRAJ', async ctx => {
+            const parsed = await parseNctraj(a.data).runInContext(ctx);
+            if (parsed.isError) throw new Error(parsed.message);
+            const coordinates = await coordinatesFromNctraj(parsed.result).runInContext(ctx);
+            return new SO.Molecule.Coordinates(coordinates, { label: a.label, description: 'Coordinates' });
+        });
+    }
+});
+
 type TopologyFromPsf = typeof TopologyFromPsf
 const TopologyFromPsf = PluginStateTransform.BuiltIn({
     name: 'topology-from-psf',
-    display: { name: 'PSF Topology', description: 'Parse PSF string data.' },
+    display: { name: 'PSF Topology', description: 'Create topology from PSF.' },
     from: [SO.Format.Psf],
     to: SO.Molecule.Topology
 })({
     apply({ a }) {
         return Task.create('Create Topology', async ctx => {
             const topology = await topologyFromPsf(a.data).runInContext(ctx);
+            return new SO.Molecule.Topology(topology, { label: topology.label || a.label, description: 'Topology' });
+        });
+    }
+});
+
+type TopologyFromPrmtop = typeof TopologyFromPrmtop
+const TopologyFromPrmtop = PluginStateTransform.BuiltIn({
+    name: 'topology-from-prmtop',
+    display: { name: 'PRMTOP Topology', description: 'Create topology from PRMTOP.' },
+    from: [SO.Format.Prmtop],
+    to: SO.Molecule.Topology
+})({
+    apply({ a }) {
+        return Task.create('Create Topology', async ctx => {
+            const topology = await topologyFromPrmtop(a.data).runInContext(ctx);
+            return new SO.Molecule.Topology(topology, { label: topology.label || a.label, description: 'Topology' });
+        });
+    }
+});
+
+type TopologyFromTop = typeof TopologyFromTop
+const TopologyFromTop = PluginStateTransform.BuiltIn({
+    name: 'topology-from-top',
+    display: { name: 'TOP Topology', description: 'Create topology from TOP.' },
+    from: [SO.Format.Top],
+    to: SO.Molecule.Topology
+})({
+    apply({ a }) {
+        return Task.create('Create Topology', async ctx => {
+            const topology = await topologyFromTop(a.data).runInContext(ctx);
             return new SO.Molecule.Topology(topology, { label: topology.label || a.label, description: 'Topology' });
         });
     }
@@ -411,7 +486,7 @@ const ModelFromTrajectory = PluginStateTransform.BuiltIn({
             if (modelIndex < 0) modelIndex += a.data.frameCount;
             const model = await Task.resolveInContext(a.data.getFrameAtIndex(modelIndex), ctx);
             const label = `Model ${modelIndex + 1}`;
-            let description = a.data.frameCount === 1 ? undefined : `of ${a.data.frameCount}`;
+            const description = a.data.frameCount === 1 ? undefined : `of ${a.data.frameCount}`;
             return new SO.Molecule.Model(model, { label, description });
         });
     },
@@ -645,7 +720,8 @@ const MultiStructureSelectionFromExpression = PluginStateTransform.BuiltIn({
                     totalSize += StructureElement.Loci.size(loci.loci);
 
                     continue;
-                } if (entry.expression !== sel.expression) {
+                }
+                if (entry.expression !== sel.expression) {
                     recreate = true;
                 } else {
                     // TODO: properly support "transitive" queries. For that Structure.areUnitAndIndicesEqual needs to be fixed;
@@ -845,7 +921,7 @@ const StructureComplexElement = PluginStateTransform.BuiltIn({
             case 'atomic-het': query = Queries.internal.atomicHet(); label = 'HET Groups/Ligands'; break;
             case 'spheres': query = Queries.internal.spheres(); label = 'Coarse Spheres'; break;
 
-            default: throw new Error(`${params.type} is a not valid complex element.`);
+            default: assertUnreachable(params.type);
         }
 
         const result = query(new QueryContext(a.data));
@@ -917,7 +993,7 @@ async function attachModelProps(model: Model, ctx: PluginContext, taskCtx: Runti
     const propertyCtx = { runtime: taskCtx, assetManager: ctx.managers.asset };
     const { autoAttach, properties } = params;
     for (const name of Object.keys(properties)) {
-        const property = ctx.customModelProperties.get(name);
+        const property = ctx.customModelProperties.get(name)!;
         const props = properties[name];
         if (autoAttach.includes(name) || property.isHidden) {
             try {
@@ -972,7 +1048,7 @@ async function attachStructureProps(structure: Structure, ctx: PluginContext, ta
     const propertyCtx = { runtime: taskCtx, assetManager: ctx.managers.asset };
     const { autoAttach, properties } = params;
     for (const name of Object.keys(properties)) {
-        const property = ctx.customStructureProperties.get(name);
+        const property = ctx.customStructureProperties.get(name)!;
         const props = properties[name];
         if (autoAttach.includes(name) || property.isHidden) {
             try {

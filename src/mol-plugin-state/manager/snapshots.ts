@@ -51,13 +51,13 @@ class PluginStateSnapshotManager extends StatefulPluginComponent<{
             current: this.state.current === id ? void 0 : this.state.current,
             entries: this.state.entries.delete(this.getIndex(e))
         });
-        this.events.changed.next();
+        this.events.changed.next(void 0);
     }
 
     add(e: PluginStateSnapshotManager.Entry) {
         this.entryMap.set(e.snapshot.id, e);
         this.updateState({ current: e.snapshot.id, entries: this.state.entries.push(e) });
-        this.events.changed.next();
+        this.events.changed.next(void 0);
     }
 
     replace(id: string, snapshot: PluginState.Snapshot) {
@@ -72,7 +72,7 @@ class PluginStateSnapshotManager extends StatefulPluginComponent<{
         });
         this.entryMap.set(snapshot.id, e);
         this.updateState({ current: e.snapshot.id, entries: this.state.entries.set(idx, e) });
-        this.events.changed.next();
+        this.events.changed.next(void 0);
     }
 
     move(id: string, dir: -1 | 1) {
@@ -84,28 +84,28 @@ class PluginStateSnapshotManager extends StatefulPluginComponent<{
         const from = this.getIndex(e);
         let to = (from + dir) % len;
         if (to < 0) to += len;
-        const f = this.state.entries.get(to);
+        const f = this.state.entries.get(to)!;
 
         const entries = this.state.entries.asMutable();
         entries.set(to, e);
         entries.set(from, f);
 
         this.updateState({ current: e.snapshot.id, entries: entries.asImmutable() });
-        this.events.changed.next();
+        this.events.changed.next(void 0);
     }
 
     clear() {
         if (this.state.entries.size === 0) return;
         this.entryMap.clear();
         this.updateState({ current: void 0, entries: List<PluginStateSnapshotManager.Entry>() });
-        this.events.changed.next();
+        this.events.changed.next(void 0);
     }
 
     setCurrent(id: string) {
         const e = this.getEntry(id);
         if (e) {
             this.updateState({ current: id as UUID });
-            this.events.changed.next();
+            this.events.changed.next(void 0);
         }
         return e && e.snapshot;
     }
@@ -115,7 +115,7 @@ class PluginStateSnapshotManager extends StatefulPluginComponent<{
         if (!id) {
             if (len === 0) return void 0;
             const idx = dir === -1 ? len - 1 : 0;
-            return this.state.entries.get(idx).snapshot.id;
+            return this.state.entries.get(idx)!.snapshot.id;
         }
 
         const e = this.getEntry(id);
@@ -126,7 +126,7 @@ class PluginStateSnapshotManager extends StatefulPluginComponent<{
         idx = (idx + dir) % len;
         if (idx < 0) idx += len;
 
-        return this.state.entries.get(idx).snapshot.id;
+        return this.state.entries.get(idx)!.snapshot.id;
     }
 
     async setStateSnapshot(snapshot: PluginStateSnapshotManager.StateSnapshot): Promise<PluginState.Snapshot | undefined> {
@@ -152,7 +152,7 @@ class PluginStateSnapshotManager extends StatefulPluginComponent<{
             isPlaying: false,
             nextSnapshotDelayInMs: snapshot.playback ? snapshot.playback.nextSnapshotDelayInMs : PluginStateSnapshotManager.DefaultNextSnapshotDelayInMs
         });
-        this.events.changed.next();
+        this.events.changed.next(void 0);
         if (!current) return;
         const entry = this.getEntry(current);
         const next = entry && entry.snapshot;
@@ -193,7 +193,7 @@ class PluginStateSnapshotManager extends StatefulPluginComponent<{
         const json = JSON.stringify(this.getStateSnapshot({ params: options?.params }), null, 2);
 
         if (!options?.type || options.type === 'json' || options.type === 'molj') {
-            return new Blob([json], {type : 'application/json;charset=utf-8'});
+            return new Blob([json], { type: 'application/json;charset=utf-8' });
         } else {
             const state = new Uint8Array(utf8ByteCount(json));
             utf8Write(state, 0, json);
@@ -218,7 +218,7 @@ class PluginStateSnapshotManager extends StatefulPluginComponent<{
             }
 
             const zipFile = await this.plugin.runTask(Zip(zipDataObj));
-            return new Blob([zipFile], {type : 'application/zip'});
+            return new Blob([zipFile], { type: 'application/zip' });
         }
     }
 
@@ -238,12 +238,12 @@ class PluginStateSnapshotManager extends StatefulPluginComponent<{
                 }
             } else {
                 const data = await this.plugin.runTask(readFromFile(file, 'zip'));
-                const assets = Object.create(null);
+                const assetData = Object.create(null);
 
                 objectForEach(data, (v, k) => {
                     if (k === 'state.json' || k === 'assets.json') return;
                     const name = k.substring(k.indexOf('/') + 1);
-                    assets[name] = new File([v], name);
+                    assetData[name] = v;
                 });
                 const stateFile = new File([data['state.json']], 'state.json');
                 const stateData = await this.plugin.runTask(readFromFile(stateFile, 'string'));
@@ -253,7 +253,7 @@ class PluginStateSnapshotManager extends StatefulPluginComponent<{
                     const json = JSON.parse(await this.plugin.runTask(readFromFile(file, 'string')));
 
                     for (const [id, asset] of json) {
-                        this.plugin.managers.asset.set(asset, assets[id]);
+                        this.plugin.managers.asset.set(asset, new File([assetData[id]], asset.name));
                     }
                 }
 
@@ -261,7 +261,8 @@ class PluginStateSnapshotManager extends StatefulPluginComponent<{
                 return this.setStateSnapshot(snapshot);
             }
         } catch (e) {
-            this.plugin.log.error(`Reading state: ${e}`);
+            console.error(e);
+            this.plugin.log.error('Error reading state');
         }
     }
 
@@ -288,7 +289,7 @@ class PluginStateSnapshotManager extends StatefulPluginComponent<{
                 this.next();
                 return;
             }
-            this.events.changed.next();
+            this.events.changed.next(void 0);
             const snapshot = e.snapshot;
             const delay = typeof snapshot.durationInMs !== 'undefined' ? snapshot.durationInMs : this.state.nextSnapshotDelayInMs;
             this.timeoutHandle = setTimeout(this.next, delay);
@@ -301,7 +302,7 @@ class PluginStateSnapshotManager extends StatefulPluginComponent<{
         this.updateState({ isPlaying: false });
         if (typeof this.timeoutHandle !== 'undefined') clearTimeout(this.timeoutHandle);
         this.timeoutHandle = void 0;
-        this.events.changed.next();
+        this.events.changed.next(void 0);
     }
 
     togglePlay() {

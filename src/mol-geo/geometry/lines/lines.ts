@@ -1,12 +1,12 @@
 /**
- * Copyright (c) 2018-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
 
 import { ValueCell } from '../../../mol-util';
 import { Mat4, Vec3, Vec4 } from '../../../mol-math/linear-algebra';
-import { transformPositionArray, GroupMapping, createGroupMapping} from '../../util';
+import { transformPositionArray, GroupMapping, createGroupMapping } from '../../util';
 import { GeometryUtils } from '../geometry';
 import { createColors } from '../color-data';
 import { createMarkers } from '../marker-data';
@@ -26,6 +26,7 @@ import { createEmptyOverpaint } from '../overpaint-data';
 import { createEmptyTransparency } from '../transparency-data';
 import { hashFnv32a } from '../../../mol-data/util';
 import { createEmptyClipping } from '../clipping-data';
+import { createEmptySubstance } from '../substance-data';
 
 /** Wide line */
 export interface Lines {
@@ -164,7 +165,7 @@ export namespace Lines {
 
     export const Params = {
         ...BaseGeometry.Params,
-        sizeFactor: PD.Numeric(1.5, { min: 0, max: 10, step: 0.1 }),
+        sizeFactor: PD.Numeric(2, { min: 0, max: 10, step: 0.1 }),
         lineSizeAttenuation: PD.Boolean(false),
     };
     export type Params = typeof Params
@@ -207,9 +208,12 @@ export namespace Lines {
 
         const color = createColors(locationIt, positionIt, theme.color);
         const size = createSizes(locationIt, theme.size);
-        const marker = createMarkers(instanceCount * groupCount);
+        const marker = props.instanceGranularity
+            ? createMarkers(instanceCount, 'instance')
+            : createMarkers(instanceCount * groupCount, 'groupInstance');
         const overpaint = createEmptyOverpaint();
         const transparency = createEmptyTransparency();
+        const material = createEmptySubstance();
         const clipping = createEmptyClipping();
 
         const counts = { drawCount: lines.lineCount * 2 * 3, vertexCount: lines.lineCount * 4, groupCount, instanceCount };
@@ -218,6 +222,8 @@ export namespace Lines {
         const boundingSphere = calculateTransformBoundingSphere(invariantBoundingSphere, transform.aTransform.ref.value, instanceCount);
 
         return {
+            dGeometryType: ValueCell.create('lines'),
+
             aMapping: lines.mappingBuffer,
             aGroup: lines.groupBuffer,
             aStart: lines.startBuffer,
@@ -231,13 +237,14 @@ export namespace Lines {
             ...marker,
             ...overpaint,
             ...transparency,
+            ...material,
             ...clipping,
             ...transform,
 
             ...BaseGeometry.createValues(props, counts),
             uSizeFactor: ValueCell.create(props.sizeFactor),
             dLineSizeAttenuation: ValueCell.create(props.lineSizeAttenuation),
-            dDoubleSided: ValueCell.create(true),
+            uDoubleSided: ValueCell.create(true),
             dFlipSided: ValueCell.create(false),
         };
     }

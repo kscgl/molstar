@@ -1,28 +1,30 @@
 /**
- * Copyright (c) 2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2020-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
+ * @author Sebastian Bittrich <sebastian.bittrich@rcsb.org>
  */
 
-import { CollapsableControls, PurePluginUIComponent } from '../base';
-import { Icon, ArrowUpwardSvg, ArrowDownwardSvg, DeleteOutlinedSvg, HelpOutlineSvg, TuneSvg, SuperposeAtomsSvg, SuperposeChainsSvg, SuperpositionSvg } from '../controls/icons';
-import { Button, ToggleButton, IconButton } from '../controls/common';
-import { StructureElement, StructureSelection, QueryContext, Structure, StructureProperties } from '../../mol-model/structure';
+import { SymmetryOperator } from '../../mol-math/geometry';
 import { Mat4 } from '../../mol-math/linear-algebra';
-import { ParamDefinition as PD } from '../../mol-util/param-definition';
-import { StateObjectRef, StateObjectCell, StateSelection } from '../../mol-state';
-import { StateTransforms } from '../../mol-plugin-state/transforms';
-import { PluginStateObject } from '../../mol-plugin-state/objects';
+import { SIFTSMapping } from '../../mol-model-props/sequence/sifts-mapping';
+import { QueryContext, Structure, StructureElement, StructureProperties, StructureSelection } from '../../mol-model/structure';
 import { alignAndSuperpose, superpose } from '../../mol-model/structure/structure/util/superposition';
+import { alignAndSuperposeWithSIFTSMapping } from '../../mol-model/structure/structure/util/superposition-sifts-mapping';
 import { StructureSelectionQueries } from '../../mol-plugin-state/helpers/structure-selection-query';
-import { structureElementStatsLabel, elementLabel } from '../../mol-theme/label';
-import { ParameterControls } from '../controls/parameters';
-import { stripTags } from '../../mol-util/string';
 import { StructureSelectionHistoryEntry } from '../../mol-plugin-state/manager/structure/selection';
-import { ToggleSelectionModeButton } from './selection';
-import { alignAndSuperposeWithBestDatabaseMapping } from '../../mol-model/structure/structure/util/superposition-db-mapping';
+import { PluginStateObject } from '../../mol-plugin-state/objects';
+import { StateTransforms } from '../../mol-plugin-state/transforms';
 import { PluginCommands } from '../../mol-plugin/commands';
-import { BestDatabaseSequenceMapping } from '../../mol-model-props/sequence/best-database-mapping';
+import { StateObjectCell, StateObjectRef } from '../../mol-state';
+import { elementLabel, structureElementStatsLabel } from '../../mol-theme/label';
+import { ParamDefinition as PD } from '../../mol-util/param-definition';
+import { stripTags } from '../../mol-util/string';
+import { CollapsableControls, PurePluginUIComponent } from '../base';
+import { Button, IconButton, ToggleButton } from '../controls/common';
+import { ArrowDownwardSvg, ArrowUpwardSvg, DeleteOutlinedSvg, HelpOutlineSvg, Icon, SuperposeAtomsSvg, SuperposeChainsSvg, SuperpositionSvg, TuneSvg } from '../controls/icons';
+import { ParameterControls } from '../controls/parameters';
+import { ToggleSelectionModeButton } from './selection';
 
 export class StructureSuperpositionControls extends CollapsableControls {
     defaultState() {
@@ -48,7 +50,8 @@ export class StructureSuperpositionControls extends CollapsableControls {
 }
 
 export const StructureSuperpositionParams = {
-    alignSequences: PD.Boolean(true, { isEssential: true, description: 'Perform a sequence alignment and use the aligned residue pairs to guide the 3D superposition.' }),
+    alignSequences: PD.Boolean(true, { isEssential: true, description: 'For Chain-based 3D superposition, perform a sequence alignment and use the aligned residue pairs to guide the 3D superposition.' }),
+    traceOnly: PD.Boolean(true, { description: 'For Chain- and Uniprot-based 3D superposition, base superposition only on CA (and equivalent) atoms.' })
 };
 const DefaultStructureSuperpositionOptions = PD.getDefaultValues(StructureSuperpositionParams);
 export type StructureSuperpositionOptions = PD.ValuesFor<typeof StructureSuperpositionParams>
@@ -78,7 +81,7 @@ export class SuperpositionControls extends PurePluginUIComponent<{ }, Superposit
         canUseDb: false,
         action: undefined,
         options: DefaultStructureSuperpositionOptions
-    }
+    };
 
     componentDidMount() {
         this.subscribe(this.selection.events.changed, () => {
@@ -94,7 +97,7 @@ export class SuperpositionControls extends PurePluginUIComponent<{ }, Superposit
         });
 
         this.subscribe(this.plugin.managers.structure.hierarchy.behaviors.selection, sel => {
-            this.setState({ canUseDb: sel.structures.every(s => !!s.cell.obj?.data && s.cell.obj.data.models.some(m => BestDatabaseSequenceMapping.Provider.isApplicable(m)) ) });
+            this.setState({ canUseDb: sel.structures.every(s => !!s.cell.obj?.data && s.cell.obj.data.models.some(m => SIFTSMapping.Provider.isApplicable(m))) });
         });
     }
 
@@ -102,19 +105,21 @@ export class SuperpositionControls extends PurePluginUIComponent<{ }, Superposit
         return this.plugin.managers.structure.selection;
     }
 
-    async transform(s: StateObjectRef<PluginStateObject.Molecule.Structure>, matrix: Mat4) {
+    async transform(s: StateObjectRef<PluginStateObject.Molecule.Structure>, matrix: Mat4, coordinateSystem?: SymmetryOperator) {
         const r = StateObjectRef.resolveAndCheck(this.plugin.state.data, s);
         if (!r) return;
-        // TODO should find any TransformStructureConformation decorator instance
-        const o = StateSelection.findTagInSubtree(this.plugin.state.data.tree, r.transform.ref, SuperpositionTag);
+        const o = this.plugin.state.data.selectQ(q => q.byRef(r.transform.ref).subtree().withTransformer(StateTransforms.Model.TransformStructureConformation))[0];
+
+        const transform = coordinateSystem && !Mat4.isIdentity(coordinateSystem.matrix)
+            ? Mat4.mul(Mat4(), coordinateSystem.matrix, matrix)
+            : matrix;
 
         const params = {
             transform: {
                 name: 'matrix' as const,
-                params: { data: matrix, transpose: false }
+                params: { data: transform, transpose: false }
             }
         };
-        // TODO add .insertOrUpdate to StateBuilder?
         const b = o
             ? this.plugin.state.data.build().to(o).update(params)
             : this.plugin.state.data.build().to(s)
@@ -122,75 +127,104 @@ export class SuperpositionControls extends PurePluginUIComponent<{ }, Superposit
         await this.plugin.runTask(this.plugin.state.data.updateTree(b));
     }
 
+    private getRootStructure(s: Structure) {
+        const parent = this.plugin.helpers.substructureParent.get(s)!;
+        return this.plugin.state.data.selectQ(q => q.byValue(parent).rootOfType(PluginStateObject.Molecule.Structure))[0].obj?.data!;
+    }
+
     superposeChains = async () => {
-        const { query } = StructureSelectionQueries.trace;
+        const { query } = this.state.options.traceOnly ? StructureSelectionQueries.trace : StructureSelectionQueries.polymer;
         const entries = this.chainEntries;
 
-        const traceLocis = entries.map((e, i) => {
+        const locis = entries.map(e => {
             const s = StructureElement.Loci.toStructure(e.loci);
             const loci = StructureSelection.toLociWithSourceUnits(query(new QueryContext(s)));
-            return StructureElement.Loci.remap(loci, i === 0
-                ? this.plugin.helpers.substructureParent.get(e.loci.structure.root)!.obj!.data
-                : loci.structure.root
-            );
+            return StructureElement.Loci.remap(loci, this.getRootStructure(e.loci.structure));
         });
 
+        const pivot = this.plugin.managers.structure.hierarchy.findStructure(locis[0]?.structure);
+        const coordinateSystem = pivot?.transform?.cell.obj?.data.coordinateSystem;
+
         const transforms = this.state.options.alignSequences
-            ? alignAndSuperpose(traceLocis)
-            : superpose(traceLocis);
+            ? alignAndSuperpose(locis)
+            : superpose(locis);
 
         const eA = entries[0];
-        for (let i = 1, il = traceLocis.length; i < il; ++i) {
+        for (let i = 1, il = locis.length; i < il; ++i) {
             const eB = entries[i];
             const { bTransform, rmsd } = transforms[i - 1];
-            await this.transform(eB.cell, bTransform);
+            await this.transform(eB.cell, bTransform, coordinateSystem);
             const labelA = stripTags(eA.label);
             const labelB = stripTags(eB.label);
             this.plugin.log.info(`Superposed [${labelA}] and [${labelB}] with RMSD ${rmsd.toFixed(2)}.`);
         }
-    }
+        await this.cameraReset();
+    };
 
     superposeAtoms = async () => {
         const entries = this.atomEntries;
 
-        const atomLocis = entries.map((e, i) => {
-            return StructureElement.Loci.remap(e.loci, i === 0
-                ? this.plugin.helpers.substructureParent.get(e.loci.structure.root)!.obj!.data
-                : e.loci.structure.root
-            );
+        const atomLocis = entries.map(e => {
+            return StructureElement.Loci.remap(e.loci, this.getRootStructure(e.loci.structure));
         });
         const transforms = superpose(atomLocis);
+
+        const pivot = this.plugin.managers.structure.hierarchy.findStructure(atomLocis[0]?.structure);
+        const coordinateSystem = pivot?.transform?.cell.obj?.data.coordinateSystem;
 
         const eA = entries[0];
         for (let i = 1, il = atomLocis.length; i < il; ++i) {
             const eB = entries[i];
             const { bTransform, rmsd } = transforms[i - 1];
-            await this.transform(eB.cell, bTransform);
+            await this.transform(eB.cell, bTransform, coordinateSystem);
             const labelA = stripTags(eA.label);
             const labelB = stripTags(eB.label);
             const count = entries[i].atoms.length;
             this.plugin.log.info(`Superposed ${count} ${count === 1 ? 'atom' : 'atoms'} of [${labelA}] and [${labelB}] with RMSD ${rmsd.toFixed(2)}.`);
         }
-    }
+        await this.cameraReset();
+    };
 
     superposeDb = async () => {
         const input = this.plugin.managers.structure.hierarchy.behaviors.selection.value.structures;
+        const traceOnly = this.state.options.traceOnly;
 
-        const transforms = alignAndSuperposeWithBestDatabaseMapping(input.map(s => s.cell.obj?.data!));
+        const structures = input.map(s => s.cell.obj?.data!);
+        const { entries, failedPairs, zeroOverlapPairs } = alignAndSuperposeWithSIFTSMapping(structures, { traceOnly });
+
+        const coordinateSystem = input[0]?.transform?.cell.obj?.data.coordinateSystem;
 
         let rmsd = 0;
 
-        for (const xform of transforms) {
-            await this.transform(input[xform.other].cell, xform.transform.bTransform);
+        for (const xform of entries) {
+            await this.transform(input[xform.other].cell, xform.transform.bTransform, coordinateSystem);
             rmsd += xform.transform.rmsd;
         }
 
-        rmsd /= transforms.length - 1;
+        rmsd /= Math.max(entries.length - 1, 1);
 
-        this.plugin.log.info(`Superposed ${input.length} structures with avg. RMSD ${rmsd.toFixed(2)}.`);
+        const formatPairs = (pairs: [number, number][]) => {
+            return `[${pairs.map(([i, j]) => `(${structures[i].models[0].entryId}, ${structures[j].models[0].entryId})`).join(', ')}]`;
+        };
+
+        if (zeroOverlapPairs.length) {
+            this.plugin.log.warn(`Superposition: No UNIPROT mapping overlap between structures ${formatPairs(zeroOverlapPairs)}.`);
+        }
+
+        if (failedPairs.length) {
+            this.plugin.log.error(`Superposition: Failed to superpose structures ${formatPairs(failedPairs)}.`);
+        }
+
+        if (entries.length) {
+            this.plugin.log.info(`Superposed ${entries.length + 1} structures with avg. RMSD ${rmsd.toFixed(2)} Å.`);
+            await this.cameraReset();
+        }
+    };
+
+    async cameraReset() {
         await new Promise(res => requestAnimationFrame(res));
         PluginCommands.Camera.Reset(this.plugin);
-    };
+    }
 
     toggleByChains = () => this.setState({ action: this.state.action === 'byChains' ? void 0 : 'byChains' });
     toggleByAtoms = () => this.setState({ action: this.state.action === 'byAtoms' ? void 0 : 'byAtoms' });
@@ -210,7 +244,7 @@ export class SuperpositionControls extends PurePluginUIComponent<{ }, Superposit
 
     lociEntry(e: LociEntry, idx: number) {
         return <div className='msp-flex-row' key={idx}>
-            <Button noOverflow title='Click to focus. Hover to highlight.' onClick={() => this.focusLoci(e.loci)} style={{ width: 'auto', textAlign: 'left' }} onMouseEnter={() => this.highlight(e.loci)} onMouseLeave={this.plugin.managers.interactivity.lociHighlights.clearHighlights}>
+            <Button noOverflow title='Click to focus. Hover to highlight.' onClick={() => this.focusLoci(e.loci)} style={{ width: 'auto', textAlign: 'left' }} onMouseEnter={() => this.highlight(e.loci)} onMouseLeave={() => this.plugin.managers.interactivity.lociHighlights.clearHighlights()}>
                 <span dangerouslySetInnerHTML={{ __html: e.label }} />
             </Button>
         </div>;
@@ -219,7 +253,7 @@ export class SuperpositionControls extends PurePluginUIComponent<{ }, Superposit
     historyEntry(e: StructureSelectionHistoryEntry, idx: number) {
         const history = this.plugin.managers.structure.selection.additionsHistory;
         return <div className='msp-flex-row' key={e.id}>
-            <Button noOverflow title='Click to focus. Hover to highlight.' onClick={() => this.focusLoci(e.loci)} style={{ width: 'auto', textAlign: 'left' }} onMouseEnter={() => this.highlight(e.loci)} onMouseLeave={this.plugin.managers.interactivity.lociHighlights.clearHighlights}>
+            <Button noOverflow title='Click to focus. Hover to highlight.' onClick={() => this.focusLoci(e.loci)} style={{ width: 'auto', textAlign: 'left' }} onMouseEnter={() => this.highlight(e.loci)} onMouseLeave={() => this.plugin.managers.interactivity.lociHighlights.clearHighlights()}>
                 {idx}. <span dangerouslySetInnerHTML={{ __html: e.label }} />
             </Button>
             {history.length > 1 && <IconButton svg={ArrowUpwardSvg} small={true} className='msp-form-control' onClick={() => this.moveHistory(e, 'up')} flex='20px' title={'Move up'} />}
@@ -323,15 +357,15 @@ export class SuperpositionControls extends PurePluginUIComponent<{ }, Superposit
 
     superposeByDbMapping() {
         return <>
-            <Button icon={SuperposeChainsSvg} title='Superpose structures using database mapping.' className='msp-btn msp-btn-block' onClick={this.superposeDb} style={{ marginTop: '1px' }} disabled={this.state.isBusy}>
-                DB
+            <Button icon={SuperposeChainsSvg} title='Superpose structures using intersection of residues from SIFTS UNIPROT mapping.' className='msp-btn msp-btn-block' onClick={this.superposeDb} style={{ marginTop: '1px' }} disabled={this.state.isBusy}>
+                Uniprot
             </Button>
         </>;
     }
 
     private setOptions = (values: StructureSuperpositionOptions) => {
         this.setState({ options: values });
-    }
+    };
 
     render() {
         return <>

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  * @author David Sehnal <david.sehnal@gmail.com>
@@ -11,11 +11,13 @@ import { Color } from '../../mol-util/color';
 import { Vec2, Vec3, Vec4 } from '../../mol-math/linear-algebra';
 import { LocationIterator } from '../util/location-iterator';
 import { NullLocation } from '../../mol-model/location';
-import { LocationColor, ColorTheme } from '../../mol-theme/color';
-import { Geometry } from './geometry';
+import { LocationColor, ColorTheme, ColorVolume } from '../../mol-theme/color';
 import { createNullTexture, Texture } from '../../mol-gl/webgl/texture';
 
-export type ColorType = 'uniform' | 'instance' | 'group' | 'groupInstance' | 'vertex' | 'vertexInstance' | 'volume' | 'volumeInstance'
+export type ColorTypeLocation = 'uniform' | 'instance' | 'group' | 'groupInstance' | 'vertex' | 'vertexInstance';
+export type ColorTypeGrid = 'volume' | 'volumeInstance';
+export type ColorTypeDirect = 'direct';
+export type ColorType = ColorTypeLocation | ColorTypeGrid | ColorTypeDirect;
 
 export type ColorData = {
     uColor: ValueCell<Vec3>,
@@ -29,7 +31,7 @@ export type ColorData = {
     dUsePalette: ValueCell<boolean>,
 }
 
-export function createColors(locationIt: LocationIterator, positionIt: LocationIterator, colorTheme: ColorTheme<any>, colorData?: ColorData): ColorData {
+export function createColors(locationIt: LocationIterator, positionIt: LocationIterator, colorTheme: ColorTheme<any, any>, colorData?: ColorData): ColorData {
     const data = _createColors(locationIt, positionIt, colorTheme, colorData);
     if (colorTheme.palette) {
         ValueCell.updateIfChanged(data.dUsePalette, true);
@@ -40,16 +42,20 @@ export function createColors(locationIt: LocationIterator, positionIt: LocationI
     return data;
 }
 
-function _createColors(locationIt: LocationIterator, positionIt: LocationIterator, colorTheme: ColorTheme<any>, colorData?: ColorData): ColorData {
-    switch (Geometry.getGranularity(locationIt, colorTheme.granularity)) {
+function _createColors(locationIt: LocationIterator, positionIt: LocationIterator, colorTheme: ColorTheme<any, any>, colorData?: ColorData): ColorData {
+    switch (colorTheme.granularity) {
         case 'uniform': return createUniformColor(locationIt, colorTheme.color, colorData);
-        case 'instance': return createInstanceColor(locationIt, colorTheme.color, colorData);
+        case 'instance':
+            return locationIt.nonInstanceable
+                ? createGroupColor(locationIt, colorTheme.color, colorData)
+                : createInstanceColor(locationIt, colorTheme.color, colorData);
         case 'group': return createGroupColor(locationIt, colorTheme.color, colorData);
         case 'groupInstance': return createGroupInstanceColor(locationIt, colorTheme.color, colorData);
         case 'vertex': return createVertexColor(positionIt, colorTheme.color, colorData);
         case 'vertexInstance': return createVertexInstanceColor(positionIt, colorTheme.color, colorData);
-        case 'volume': return createGridColor((colorTheme as any).grid, 'volume', colorData);
-        case 'volumeInstance': return createGridColor((colorTheme as any).grid, 'volumeInstance', colorData);
+        case 'volume': return createGridColor(colorTheme.grid, 'volume', colorData);
+        case 'volumeInstance': return createGridColor(colorTheme.grid, 'volumeInstance', colorData);
+        case 'direct': return createDirectColor(colorData);
     }
 }
 
@@ -206,12 +212,6 @@ function createVertexInstanceColor(locationIt: LocationIterator, color: Location
 
 //
 
-interface ColorVolume {
-    colors: Texture
-    dimension: Vec3
-    transform: Vec4
-}
-
 export function createGridColor(grid: ColorVolume, type: ColorType, colorData?: ColorData): ColorData {
     const { colors, dimension, transform } = grid;
     const width = colors.getWidth();
@@ -233,6 +233,28 @@ export function createGridColor(grid: ColorVolume, type: ColorType, colorData?: 
             uColorGridDim: ValueCell.create(Vec3.clone(dimension)),
             uColorGridTransform: ValueCell.create(Vec4.clone(transform)),
             dColorType: ValueCell.create(type),
+            dUsePalette: ValueCell.create(false),
+        };
+    }
+}
+
+//
+
+/** Creates direct color */
+function createDirectColor(colorData?: ColorData): ColorData {
+    if (colorData) {
+        ValueCell.updateIfChanged(colorData.dColorType, 'direct');
+        return colorData;
+    } else {
+        return {
+            uColor: ValueCell.create(Vec3()),
+            tColor: ValueCell.create({ array: new Uint8Array(3), width: 1, height: 1 }),
+            tColorGrid: ValueCell.create(createNullTexture()),
+            tPalette: ValueCell.create({ array: new Uint8Array(3), width: 1, height: 1 }),
+            uColorTexDim: ValueCell.create(Vec2.create(1, 1)),
+            uColorGridDim: ValueCell.create(Vec3.create(1, 1, 1)),
+            uColorGridTransform: ValueCell.create(Vec4.create(0, 0, 0, 1)),
+            dColorType: ValueCell.create('direct'),
             dUsePalette: ValueCell.create(false),
         };
     }

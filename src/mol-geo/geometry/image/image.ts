@@ -7,7 +7,7 @@
 import { hashFnv32a } from '../../../mol-data/util';
 import { LocationIterator } from '../../../mol-geo/util/location-iterator';
 import { RenderableState } from '../../../mol-gl/renderable';
-import { calculateTransformBoundingSphere, TextureImage } from '../../../mol-gl/renderable/util';
+import { calculateTransformBoundingSphere, createTextureImage, TextureImage } from '../../../mol-gl/renderable/util';
 import { Sphere3D } from '../../../mol-math/geometry';
 import { Vec2, Vec4, Vec3 } from '../../../mol-math/linear-algebra';
 import { Theme } from '../../../mol-theme/theme';
@@ -26,6 +26,7 @@ import { fillSerial } from '../../../mol-util/array';
 import { createEmptyClipping } from '../clipping-data';
 import { NullLocation } from '../../../mol-model/location';
 import { QuadPositions } from '../../../mol-gl/compute/util';
+import { createEmptySubstance } from '../substance-data';
 
 const QuadIndices = new Uint32Array([
     0, 1, 2,
@@ -113,7 +114,10 @@ namespace Image {
     }
 
     export function createEmpty(image?: Image): Image {
-        return {} as Image; // TODO
+        const imageTexture = createTextureImage(0, 4, Uint8Array);
+        const corners = image ? image.cornerBuffer.ref.value : new Float32Array(8 * 3);
+        const groupTexture = createTextureImage(0, 4, Uint8Array);
+        return create(imageTexture, corners, groupTexture, image);
     }
 
     export const Params = {
@@ -139,9 +143,12 @@ namespace Image {
         const positionIt = Utils.createPositionIterator(image, transform);
 
         const color = createColors(locationIt, positionIt, theme.color);
-        const marker = createMarkers(instanceCount * groupCount);
+        const marker = props.instanceGranularity
+            ? createMarkers(instanceCount, 'instance')
+            : createMarkers(instanceCount * groupCount, 'groupInstance');
         const overpaint = createEmptyOverpaint();
         const transparency = createEmptyTransparency();
+        const material = createEmptySubstance();
         const clipping = createEmptyClipping();
 
         const counts = { drawCount: QuadIndices.length, vertexCount: QuadPositions.length / 3, groupCount, instanceCount };
@@ -150,10 +157,13 @@ namespace Image {
         const boundingSphere = calculateTransformBoundingSphere(invariantBoundingSphere, transform.aTransform.ref.value, instanceCount);
 
         return {
+            dGeometryType: ValueCell.create('image'),
+
             ...color,
             ...marker,
             ...overpaint,
             ...transparency,
+            ...material,
             ...clipping,
             ...transform,
             ...BaseGeometry.createValues(props, counts),

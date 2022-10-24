@@ -6,15 +6,15 @@
  */
 
 import * as React from 'react';
-import { PluginUIComponent } from '../base';
-import { MarkerAction } from '../../mol-util/marker-action';
-import { ButtonsType, ModifiersKeys, getButtons, getModifiers, getButton } from '../../mol-util/input/input-observer';
-import { SequenceWrapper } from './wrapper';
-import { StructureElement, StructureProperties, Unit } from '../../mol-model/structure';
 import { Subject } from 'rxjs';
-import { debounceTime } from 'rxjs/operators';
+import { throttleTime } from 'rxjs/operators';
 import { OrderedSet } from '../../mol-data/int';
+import { StructureElement, StructureProperties, Unit } from '../../mol-model/structure';
 import { Representation } from '../../mol-repr/representation';
+import { ButtonsType, getButton, getButtons, getModifiers, ModifiersKeys } from '../../mol-util/input/input-observer';
+import { MarkerAction } from '../../mol-util/marker-action';
+import { PluginUIComponent } from '../base';
+import { SequenceWrapper } from './wrapper';
 import {Color} from '../../mol-util/color';
 
 type SequenceProps = {
@@ -40,7 +40,7 @@ export class Sequence<P extends SequenceProps> extends PluginUIComponent<P> {
     private lociSelectionProvider = (loci: Representation.Loci, action: MarkerAction, color?: Color) => {
         const changed = this.props.sequenceWrapper.markResidue(loci.loci, action);
         if (changed) this.updateMarker(color);
-    }
+    };
 
     private get sequenceNumberPeriod() {
         if (this.props.sequenceNumberPeriod !== undefined) {
@@ -56,12 +56,10 @@ export class Sequence<P extends SequenceProps> extends PluginUIComponent<P> {
         this.plugin.managers.interactivity.lociHighlights.addProvider(this.lociHighlightProvider);
         this.plugin.managers.interactivity.lociSelects.addProvider(this.lociSelectionProvider);
 
-        this.subscribe(debounceTime<{ seqIdx: number, buttons: number, button: number, modifiers: ModifiersKeys }>(15)(this.highlightQueue), (e) => {
+        this.subscribe(this.highlightQueue.pipe(throttleTime(3 * 16.666, void 0, { leading: true, trailing: true })), (e) => {
             const loci = this.getLoci(e.seqIdx < 0 ? void 0 : e.seqIdx);
             this.hover(loci, e.buttons, e.button, e.modifiers);
         });
-
-        // this.updateMarker()
     }
 
     componentWillUnmount() {
@@ -105,9 +103,9 @@ export class Sequence<P extends SequenceProps> extends PluginUIComponent<P> {
 
     contextMenu = (e: React.MouseEvent) => {
         e.preventDefault();
-    }
+    };
 
-    private mouseDownLoci: StructureElement.Loci | undefined = undefined
+    private mouseDownLoci: StructureElement.Loci | undefined = undefined;
 
     mouseDown = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -120,7 +118,7 @@ export class Sequence<P extends SequenceProps> extends PluginUIComponent<P> {
 
         this.click(loci, buttons, button, modifiers);
         this.mouseDownLoci = loci;
-    }
+    };
 
     mouseUp = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -149,7 +147,7 @@ export class Sequence<P extends SequenceProps> extends PluginUIComponent<P> {
             this.click(StructureElement.Loci.subtract(range, this.mouseDownLoci), buttons, button, modifiers);
         }
         this.mouseDownLoci = undefined;
-    }
+    };
 
     private getBackgroundColor(marker: number, color?: string | null) {
         // TODO: make marker color configurable
@@ -268,7 +266,7 @@ export class Sequence<P extends SequenceProps> extends PluginUIComponent<P> {
                 this.highlightQueue.next({ seqIdx, buttons, button, modifiers });
             }
         }
-    }
+    };
 
     mouseLeave = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -280,7 +278,7 @@ export class Sequence<P extends SequenceProps> extends PluginUIComponent<P> {
         const button = getButton(e.nativeEvent);
         const modifiers = getModifiers(e.nativeEvent);
         this.highlightQueue.next({ seqIdx: -1, buttons, button, modifiers });
-    }
+    };
 
     render() {
         const sw = this.props.sequenceWrapper;

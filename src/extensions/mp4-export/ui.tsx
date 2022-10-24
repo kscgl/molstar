@@ -102,21 +102,23 @@ export class Mp4EncoderUI extends CollapsableControls<{}, State> {
     }
 
     componentWillUnmount() {
+        super.componentWillUnmount();
         this._controls?.dispose();
         this._controls = void 0;
     }
 
     save = () => {
         download(new Blob([this.state.data!.movie]), this.state.data!.filename);
-    }
+    };
 
     generate = async () => {
         try {
             this.setState({ busy: true });
             const data = await this.controls.render();
             this.setState({ busy: false, data });
-        } catch {
+        } catch (e) {
+            console.error(e);
             this.setState({ busy: false });
         }
-    }
+    };
 }

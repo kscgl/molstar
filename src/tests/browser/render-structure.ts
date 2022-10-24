@@ -37,7 +37,9 @@ const canvas = document.createElement('canvas');
 parent.appendChild(canvas);
 resizeCanvas(canvas, parent);
 
-const canvas3d = Canvas3D.create(Canvas3DContext.fromCanvas(canvas));
+const assetManager = new AssetManager();
+
+const canvas3d = Canvas3D.create(Canvas3DContext.fromCanvas(canvas, assetManager));
 canvas3d.animate();
 
 const info = document.createElement('div');
@@ -50,7 +52,7 @@ info.style.color = 'white';
 parent.appendChild(info);
 
 let prevReprLoci = Representation.Loci.Empty;
-canvas3d.input.move.pipe(throttleTime(100)).subscribe(({x, y}) => {
+canvas3d.input.move.pipe(throttleTime(100)).subscribe(({ x, y }) => {
     const pickingId = canvas3d.identify(x, y)?.id;
     let label = '';
     if (pickingId) {
@@ -123,7 +125,7 @@ function getMembraneOrientationRepr() {
 }
 
 async function init() {
-    const ctx = { runtime: SyncRuntimeContext, assetManager: new AssetManager() };
+    const ctx = { runtime: SyncRuntimeContext, assetManager };
 
     const cif = await downloadFromPdb('3pqr');
     const models = await getModels(cif);

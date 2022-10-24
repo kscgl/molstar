@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2020-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -7,6 +7,8 @@
 export const cylinders_frag = `
 precision highp float;
 precision highp int;
+
+#define bumpEnabled
 
 uniform mat4 uView;
 
@@ -18,13 +20,13 @@ varying float vCap;
 
 uniform vec3 uCameraDir;
 uniform vec3 uCameraPosition;
+uniform mat4 uInvView;
 
 #include common
 #include common_frag_params
 #include color_frag_params
 #include light_frag_params
 #include common_clip
-#include wboit_params
 
 // adapted from https://www.shadertoy.com/view/4lcSRn
 // The MIT License, Copyright 2016 Inigo Quilez
@@ -78,7 +80,7 @@ bool CylinderImpostor(
         }
     }
 
-    #ifdef dDoubleSided
+    if (uDoubleSided) {
         // body inside
         h = -h;
         t = (-k1 - h) / k2;
@@ -90,7 +92,7 @@ bool CylinderImpostor(
         }
 
         // TODO: handle inside caps???
-    #endif
+    }
 
     return false;
 }
@@ -107,33 +109,40 @@ void main() {
 
     vec3 vViewPosition = vModelPosition + intersection.x * rayDir;
     vViewPosition = (uView * vec4(vViewPosition, 1.0)).xyz;
-    gl_FragDepthEXT = calcDepth(vViewPosition);
+    float fragmentDepth = calcDepth(vViewPosition);
 
-    // bugfix (mac only?)
-    if (gl_FragDepthEXT < 0.0) discard;
-    if (gl_FragDepthEXT > 1.0) discard;
+    if (fragmentDepth < 0.0) discard;
+    if (fragmentDepth > 1.0) discard;
 
-    float fragmentDepth = gl_FragDepthEXT;
+    gl_FragDepthEXT = fragmentDepth;
+
+    vec3 vModelPosition = (uInvView * vec4(vViewPosition, 1.0)).xyz;
     #include assign_material_color
 
     #if defined(dRenderVariant_pick)
         #include check_picking_alpha
-        gl_FragColor = material;
+        #ifdef requiredDrawBuffers
+            gl_FragColor = vObject;
+            gl_FragData[1] = vInstance;
+            gl_FragData[2] = vGroup;
+            gl_FragData[3] = packDepthToRGBA(fragmentDepth);
+        #else
+            gl_FragColor = vColor;
+        #endif
     #elif defined(dRenderVariant_depth)
         gl_FragColor = material;
+    #elif defined(dRenderVariant_marking)
+        gl_FragColor = material;
     #elif defined(dRenderVariant_color)
-        #ifdef dIgnoreLight
-            gl_FragColor = material;
-        #else
-            mat3 normalMatrix = transpose3(inverse3(mat3(uView)));
-            vec3 normal = normalize(normalMatrix * -normalize(intersection.yzw));
-            #include apply_light_color
-        #endif
+        mat3 normalMatrix = transpose3(inverse3(mat3(uView)));
+        vec3 normal = normalize(normalMatrix * -normalize(intersection.yzw));
+        #include apply_light_color
 
         #include apply_interior_color
         #include apply_marker_color
         #include apply_fog
         #include wboit_write
+        #include dpoit_write
     #endif
 }
 `;

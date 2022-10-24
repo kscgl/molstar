@@ -41,7 +41,7 @@ interface PluginStateAnimation<P = any, S = any> {
 
 namespace PluginStateAnimation {
     export type CanApply = { canApply: true } | { canApply: false, reason?: string }
-    export type Duration = { kind: 'unknown' } | { kind: 'infinite' } | { kind: 'fixed', durationMs: number  }
+    export type Duration = { kind: 'unknown' } | { kind: 'infinite' } | { kind: 'fixed', durationMs: number }
 
     export interface Instance<A extends PluginStateAnimation> {
         definition: PluginStateAnimation,
@@ -51,7 +51,8 @@ namespace PluginStateAnimation {
 
     export interface Time {
         lastApplied: number,
-        current: number
+        current: number,
+        animation?: { currentFrame: number, frameCount: number }
     }
 
     export type ApplyResult<S> = { kind: 'finished' } | { kind: 'skip' } | { kind: 'next', state: S }

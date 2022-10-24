@@ -20,17 +20,17 @@ export const AccessibleSurfaceArea = PluginBehavior.create<{ autoAttach: boolean
     category: 'custom-props',
     display: { name: 'Accessible Surface Area' },
     ctor: class extends PluginBehavior.Handler<{ autoAttach: boolean, showTooltip: boolean }> {
-        private provider = AccessibleSurfaceAreaProvider
+        private provider = AccessibleSurfaceAreaProvider;
 
         private labelProvider = {
             label: (loci: Loci): string | undefined => {
                 if (!this.params.showTooltip) return;
                 return accessibleSurfaceAreaLabel(loci);
             }
-        }
+        };
 
         update(p: { autoAttach: boolean, showTooltip: boolean }) {
-            let updated = (
+            const updated = (
                 this.params.autoAttach !== p.autoAttach ||
                 this.params.showTooltip !== p.showTooltip
             );
@@ -69,7 +69,7 @@ export const AccessibleSurfaceArea = PluginBehavior.create<{ autoAttach: boolean
 //
 
 function accessibleSurfaceAreaLabel(loci: Loci): string | undefined {
-    if(loci.kind === 'element-loci') {
+    if (loci.kind === 'element-loci') {
         if (loci.elements.length === 0) return;
 
         const accessibleSurfaceArea = AccessibleSurfaceAreaProvider.get(loci.structure).value;
@@ -96,7 +96,7 @@ function accessibleSurfaceAreaLabel(loci: Loci): string | undefined {
 
         return `Accessible Surface Area ${residueCount}: ${cummulativeArea.toFixed(2)} \u212B<sup>2</sup>`;
 
-    } else if(loci.kind === 'structure-loci') {
+    } else if (loci.kind === 'structure-loci') {
         const accessibleSurfaceArea = AccessibleSurfaceAreaProvider.get(loci.structure).value;
         if (!accessibleSurfaceArea || loci.structure.customPropertyDescriptors.hasReference(AccessibleSurfaceAreaProvider.descriptor)) return;
 

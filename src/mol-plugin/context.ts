@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -35,7 +35,7 @@ import { Representation } from '../mol-repr/representation';
 import { StructureRepresentationRegistry } from '../mol-repr/structure/registry';
 import { VolumeRepresentationRegistry } from '../mol-repr/volume/registry';
 import { StateTransform } from '../mol-state';
-import { RuntimeContext, Task } from '../mol-task';
+import { RuntimeContext, Scheduler, Task } from '../mol-task';
 import { ColorTheme } from '../mol-theme/color';
 import { SizeTheme } from '../mol-theme/size';
 import { ThemeRegistryContext } from '../mol-theme/theme';
@@ -60,6 +60,7 @@ import { TaskManager } from './util/task-manager';
 import { PluginToastManager } from './util/toast';
 import { ViewportScreenshotHelper } from './util/viewport-screenshot';
 import { PLUGIN_VERSION, PLUGIN_VERSION_DATE } from './version';
+import { setSaccharideCompIdMapType } from '../mol-model/structure/structure/carbohydrates/constants';
 
 export class PluginContext {
     runTask = <T>(task: Task<T>, params?: { useOverlay?: boolean }) => this.managers.task.run(task, params);
@@ -67,11 +68,13 @@ export class PluginContext {
         if (!object) return void 0;
         if (Task.is(object)) return this.runTask(object);
         return object;
-    }
+    };
 
     protected subs: Subscription[] = [];
+    private initCanvas3dPromiseCallbacks: [res: () => void, rej: (err: any) => void] = [() => {}, () => {}];
 
     private disposed = false;
+    private canvasContainer: HTMLDivElement | undefined = void 0;
     private ev = RxEventHelper.create();
 
     readonly config = new PluginConfigManager(this.spec.config); // needed to init state
@@ -101,9 +104,14 @@ export class PluginContext {
             leftPanelTabName: this.ev.behavior<LeftPanelTabName>('root')
         },
         canvas3d: {
+            // TODO: remove in 4.0?
             initialized: this.canvas3dInit.pipe(filter(v => !!v), take(1))
         }
     } as const;
+
+    readonly canvas3dInitialized = new Promise<void>((res, rej) => {
+        this.initCanvas3dPromiseCallbacks = [res, rej];
+    });
 
     readonly canvas3dContext: Canvas3DContext | undefined;
     readonly canvas3d: Canvas3D | undefined;
@@ -176,6 +184,7 @@ export class PluginContext {
     readonly customStructureProperties = new CustomProperty.Registry<Structure>();
 
     readonly customStructureControls = new Map<string, { new(): any /* constructible react components with <action.customControl /> */ }>();
+    readonly customImportControls = new Map<string, { new(): any /* constructible react components with <action.customControl /> */ }>();
     readonly genericRepresentationControls = new Map<string, (selection: StructureHierarchyManager['selection']) => [StructureHierarchyRef[], string]>();
 
     /**
@@ -183,6 +192,57 @@ export class PluginContext {
      * to State Actions and similar constructs via the PluginContext.
      */
     readonly customState: unknown = Object.create(null);
+
+    initContainer(canvas3dContext?: Canvas3DContext) {
+        if (this.canvasContainer) return true;
+
+        const container = document.createElement('div');
+        Object.assign(container.style, {
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+            '-webkit-user-select': 'none',
+            'user-select': 'none',
+            '-webkit-tap-highlight-color': 'rgba(0,0,0,0)',
+            '-webkit-touch-callout': 'none',
+            'touch-action': 'manipulation',
+        });
+        let canvas = canvas3dContext?.canvas;
+        if (!canvas) {
+            canvas = document.createElement('canvas');
+            Object.assign(canvas.style, {
+                'background-image': 'linear-gradient(45deg, lightgrey 25%, transparent 25%, transparent 75%, lightgrey 75%, lightgrey), linear-gradient(45deg, lightgrey 25%, transparent 25%, transparent 75%, lightgrey 75%, lightgrey)',
+                'background-size': '60px 60px',
+                'background-position': '0 0, 30px 30px'
+            });
+            container.appendChild(canvas);
+        }
+        if (!this.initViewer(canvas, container, canvas3dContext)) {
+            return false;
+        }
+        this.canvasContainer = container;
+        return true;
+    }
+
+    mount(target: HTMLElement) {
+        if (this.disposed) throw new Error('Cannot mount a disposed context');
+
+        if (!this.initContainer()) return false;
+
+        if (this.canvasContainer!.parentElement !== target) {
+            this.canvasContainer!.parentElement?.removeChild(this.canvasContainer!);
+        }
+
+        target.appendChild(this.canvasContainer!);
+        this.handleResize();
+        return true;
+    }
+
+    unmount() {
+        this.canvasContainer?.parentElement?.removeChild(this.canvasContainer);
+    }
 
     initViewer(canvas: HTMLCanvasElement, container: HTMLDivElement, canvas3dContext?: Canvas3DContext) {
         try {
@@ -196,8 +256,12 @@ export class PluginContext {
                 const preserveDrawingBuffer = !(this.config.get(PluginConfig.General.DisablePreserveDrawingBuffer) ?? false);
                 const pixelScale = this.config.get(PluginConfig.General.PixelScale) || 1;
                 const pickScale = this.config.get(PluginConfig.General.PickScale) || 0.25;
+                const pickPadding = this.config.get(PluginConfig.General.PickPadding) ?? 1;
                 const enableWboit = this.config.get(PluginConfig.General.EnableWboit) || false;
-                (this.canvas3dContext as Canvas3DContext) = Canvas3DContext.fromCanvas(canvas, { antialias, preserveDrawingBuffer, pixelScale, pickScale, enableWboit });
+                const enableDpoit = this.config.get(PluginConfig.General.EnableDpoit) || false;
+                const preferWebGl1 = this.config.get(PluginConfig.General.PreferWebGl1) || false;
+                const failIfMajorPerformanceCaveat = !(this.config.get(PluginConfig.General.AllowMajorPerformanceCaveat) ?? false);
+                (this.canvas3dContext as Canvas3DContext) = Canvas3DContext.fromCanvas(canvas, this.managers.asset, { antialias, preserveDrawingBuffer, pixelScale, pickScale, pickPadding, enableWboit, enableDpoit, preferWebGl1, failIfMajorPerformanceCaveat });
             }
             (this.canvas3d as Canvas3D) = Canvas3D.create(this.canvas3dContext!);
             this.canvas3dInit.next(true);
@@ -226,10 +290,12 @@ export class PluginContext {
 
             this.handleResize();
 
+            Scheduler.setImmediate(() => this.initCanvas3dPromiseCallbacks[0]());
             return true;
         } catch (e) {
             this.log.error('' + e);
             console.error(e);
+            Scheduler.setImmediate(() => this.initCanvas3dPromiseCallbacks[1](e));
             return false;
         }
     }
@@ -257,7 +323,7 @@ export class PluginContext {
      * This should be used in all transform related request so that it could be "spoofed" to allow
      * "static" access to resources.
      */
-    readonly fetch = ajaxGet
+    readonly fetch = ajaxGet;
 
     /** return true is animating or updating */
     get isBusy() {
@@ -299,6 +365,9 @@ export class PluginContext {
 
         objectForEach(this.managers, m => (m as any)?.dispose?.());
         objectForEach(this.managers.structure, m => (m as any)?.dispose?.());
+
+        this.unmount();
+        this.canvasContainer = undefined;
 
         this.disposed = true;
     }
@@ -425,5 +494,7 @@ export class PluginContext {
         // and freezing the params object causes "read-only exception"
         // TODO: is this the best place to do it?
         setAutoFreeze(false);
+
+        setSaccharideCompIdMapType(this.config.get(PluginConfig.Structure.SaccharideCompIdMapType) ?? 'default');
     }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2019 Mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 Mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -87,8 +87,8 @@ const generator = {
 
     atomGroups: symbol(Arguments.Dictionary({
         'entity-test': Argument(Type.Bool, { isOptional: true, defaultValue: true, description: 'Test for the 1st atom of every entity' }),
-        'chain-test': Argument(Type.Bool, { isOptional: true, defaultValue: true, description: 'Test for the 1st atom of every chain'  }),
-        'residue-test': Argument(Type.Bool, { isOptional: true, defaultValue: true, description: 'Test for the 1st atom every residue'  }),
+        'chain-test': Argument(Type.Bool, { isOptional: true, defaultValue: true, description: 'Test for the 1st atom of every chain' }),
+        'residue-test': Argument(Type.Bool, { isOptional: true, defaultValue: true, description: 'Test for the 1st atom every residue' }),
         'atom-test': Argument(Type.Bool, { isOptional: true, defaultValue: true }),
         'group-by': Argument(Type.Any, { isOptional: true, defaultValue: `atom-key`, description: 'Group atoms to sets based on this property. Default: each atom has its own set' }),
     }), Types.ElementSelectionQuery, 'Return all atoms for which the tests are satisfied, grouped into sets.'),
@@ -333,6 +333,7 @@ const bondProperty = {
 
     flags: bondProp(Types.BondFlags),
     order: bondProp(Type.Num),
+    key: bondProp(Type.Num),
     length: bondProp(Type.Num),
     atomA: bondProp(Types.ElementReference),
     atomB: bondProp(Types.ElementReference)
@@ -356,5 +357,5 @@ export const structureQuery = {
     combinator,
     atomSet,
     atomProperty,
-    bondProperty: bondProperty
+    bondProperty
 };

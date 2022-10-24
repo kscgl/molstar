@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -8,8 +8,9 @@ import { Sphere3D } from '../../mol-math/geometry';
 import { Vec3, Mat4 } from '../../mol-math/linear-algebra';
 import { BoundaryHelper } from '../../mol-math/geometry/boundary-helper';
 import { TextureFilter } from '../webgl/texture';
+import { arrayMinMax } from '../../mol-util/array';
 
-export function calculateTextureInfo (n: number, itemSize: number) {
+export function calculateTextureInfo(n: number, itemSize: number) {
     n = Math.max(n, 2); // observed issues with 1 pixel textures
     const sqN = Math.sqrt(n);
     let width = Math.ceil(sqN);
@@ -39,7 +40,16 @@ export function createTextureImage<T extends Uint8Array | Float32Array>(n: numbe
     return { array, width, height };
 }
 
-export function printTextureImage(textureImage: TextureImage<any>, scale = 1) {
+const DefaultPrintImageOptions = {
+    scale: 1,
+    pixelated: false,
+    id: 'molstar.debug.image',
+    normalize: false,
+};
+export type PrintImageOptions = typeof DefaultPrintImageOptions
+
+export function printTextureImage(textureImage: TextureImage<any>, options: Partial<PrintImageOptions> = {}) {
+
     const { array, width, height } = textureImage;
     const itemSize = array.length / (width * height);
     const data = new Uint8ClampedArray(width * height * 4);
@@ -50,36 +60,64 @@ export function printTextureImage(textureImage: TextureImage<any>, scale = 1) {
             }
         }
     } else if (itemSize === 4) {
-        data.set(array);
+        if (options.normalize) {
+            const [min, max] = arrayMinMax(array);
+            for (let i = 0, il = width * height * 4; i < il; i += 4) {
+                data[i] = ((array[i] - min) / (max - min)) * 255;
+                data[i + 1] = ((array[i + 1] - min) / (max - min)) * 255;
+                data[i + 2] = ((array[i + 2] - min) / (max - min)) * 255;
+                data[i + 3] = 255;
+            }
+        } else {
+            data.set(array);
+        }
     } else {
         console.warn(`itemSize '${itemSize}' not supported`);
     }
-    return printImageData(new ImageData(data, width, height), scale);
+    return printImageData(new ImageData(data, width, height), options);
 }
 
-export function printImageData(imageData: ImageData, scale = 1, pixelated = false) {
-    const canvas = document.createElement('canvas');
+let tmpCanvas: HTMLCanvasElement;
+let tmpCanvasCtx: CanvasRenderingContext2D;
+let tmpContainer: HTMLDivElement;
+
+export function printImageData(imageData: ImageData, options: Partial<PrintImageOptions> = {}) {
+    const o = { ...DefaultPrintImageOptions, ...options };
+    const canvas = tmpCanvas || document.createElement('canvas');
+    tmpCanvas = canvas;
     canvas.width = imageData.width;
     canvas.height = imageData.height;
-    const ctx = canvas.getContext('2d');
+    const ctx = tmpCanvasCtx || canvas.getContext('2d');
+    tmpCanvasCtx = ctx;
     if (!ctx) throw new Error('Could not create canvas 2d context');
     ctx.putImageData(imageData, 0, 0);
+
+    if (!tmpContainer) {
+        tmpContainer = document.createElement('div');
+        tmpContainer.style.position = 'absolute';
+        tmpContainer.style.bottom = '0px';
+        tmpContainer.style.right = '0px';
+        tmpContainer.style.border = 'solid orange';
+        tmpContainer.style.pointerEvents = 'none';
+        document.body.appendChild(tmpContainer);
+    }
+
     canvas.toBlob(imgBlob => {
-        const objectURL = window.URL.createObjectURL(imgBlob);
-        const img = document.createElement('img');
+        const objectURL = URL.createObjectURL(imgBlob!);
+        const existingImg = document.getElementById(o.id) as HTMLImageElement;
+        const img = existingImg || document.createElement('img');
+        img.id = o.id;
         img.src = objectURL;
-        img.style.width = imageData.width * scale + 'px';
-        img.style.height = imageData.height * scale + 'px';
-        if (pixelated) {
+        img.style.width = imageData.width * o.scale + 'px';
+        img.style.height = imageData.height * o.scale + 'px';
+        if (o.pixelated) {
             // not supported in Firefox and IE
             img.style.imageRendering = 'pixelated';
         }
         img.style.position = 'relative';
-        img.style.top = '0px';
-        img.style.left = '0px';
         img.style.border = 'solid grey';
         img.style.pointerEvents = 'none';
-        document.body.appendChild(img);
+        if (!existingImg) tmpContainer.appendChild(img);
     }, 'image/png');
 }
 

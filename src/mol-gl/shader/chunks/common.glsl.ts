@@ -1,12 +1,8 @@
 export const common = `
 // TODO find a better place for these convenience defines
 
-#if defined(dRenderVariant_colorBlended) || defined(dRenderVariant_colorWboit)
+#if defined(dRenderVariant_colorBlended) || defined(dRenderVariant_colorWboit) || defined(dRenderVariant_colorDpoit)
     #define dRenderVariant_color
-#endif
-
-#if defined(dRenderVariant_pickObject) || defined(dRenderVariant_pickInstance) || defined(dRenderVariant_pickGroup)
-    #define dRenderVariant_pick
 #endif
 
 #if defined(dColorType_instance) || defined(dColorType_group) || defined(dColorType_groupInstance) || defined(dColorType_vertex) || defined(dColorType_vertexInstance)
@@ -21,6 +17,14 @@ export const common = `
     #define dColorType_varying
 #endif
 
+#if (defined(dRenderVariant_color) && defined(dColorMarker)) || defined(dRenderVariant_marking)
+    #define dNeedsMarker
+#endif
+
+#define MaskAll 0
+#define MaskOpaque 1
+#define MaskTransparent 2
+
 //
 
 #define PI 3.14159265
@@ -29,6 +33,10 @@ export const common = `
 
 #define saturate(a) clamp(a, 0.0, 1.0)
 
+#if __VERSION__ == 100
+    #define round(x) floor((x) + 0.5)
+#endif
+
 float intDiv(const in float a, const in float b) { return float(int(a) / int(b)); }
 vec2 ivec2Div(const in vec2 a, const in vec2 b) { return vec2(ivec2(a) / ivec2(b)); }
 float intMod(const in float a, const in float b) { return a - b * float(int(a) / int(b)); }
@@ -36,13 +44,8 @@ int imod(const in int a, const in int b) { return a - b * (a / b); }
 
 float pow2(const in float x) { return x * x; }
 
-const float maxFloat = 10000.0; // NOTE constant also set in TypeScript
-const float floatLogFactor = 9.210440366976517; // log(maxFloat + 1.0);
-float encodeFloatLog(const in float value) { return log(value + 1.0) / floatLogFactor; }
-float decodeFloatLog(const in float value) { return exp(value * floatLogFactor) - 1.0; }
-
-vec3 encodeFloatRGB(in float value) {
-    value = clamp(value, 0.0, 16777216.0 - 1.0) + 1.0;
+vec3 packIntToRGB(in float value) {
+    value = clamp(round(value), 0.0, 16777216.0 - 1.0) + 1.0;
     vec3 c = vec3(0.0);
     c.b = mod(value, 256.0);
     value = floor(value / 256.0);
@@ -51,8 +54,8 @@ vec3 encodeFloatRGB(in float value) {
     c.r = mod(value, 256.0);
     return c / 255.0;
 }
-float decodeFloatRGB(const in vec3 rgb) {
-    return (rgb.r * 256.0 * 256.0 * 255.0 + rgb.g * 256.0 * 255.0 + rgb.b * 255.0) - 1.0;
+float unpackRGBToInt(const in vec3 rgb) {
+    return (floor(rgb.r * 255.0 + 0.5) * 256.0 * 256.0 + floor(rgb.g * 255.0 + 0.5) * 256.0 + floor(rgb.b * 255.0 + 0.5)) - 1.0;
 }
 
 vec2 packUnitIntervalToRG(const in float v) {
@@ -210,6 +213,9 @@ float depthToViewZ(const in float isOrtho, const in float linearClipZ, const in 
             a31 * b01 - a30 * b03 - a32 * b00,
             a20 * b03 - a21 * b01 + a22 * b00) / det;
     }
+
+    #define isNaN(x) ((x) != (x))
+    #define isInf(x) ((x) == (x) + 1.0)
 #else
     #define transpose2(m) transpose(m)
     #define transpose3(m) transpose(m)
@@ -218,5 +224,8 @@ float depthToViewZ(const in float isOrtho, const in float linearClipZ, const in 
     #define inverse2(m) inverse(m)
     #define inverse3(m) inverse(m)
     #define inverse4(m) inverse(m)
+
+    #define isNaN isnan
+    #define isInf isinf
 #endif
 `;

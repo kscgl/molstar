@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2021-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -10,7 +10,6 @@ precision highp float;
 #include common
 #include read_from_texture
 
-uniform int uTotalCount;
 uniform int uGroupCount;
 
 attribute float aSample;
@@ -27,7 +26,7 @@ uniform vec2 uColorTexDim;
 uniform sampler2D tColor;
 
 varying vec3 vPosition;
-varying vec3 vColor;
+varying vec4 vColor;
 
 uniform vec3 uBboxSize;
 uniform vec3 uBboxMin;
@@ -35,7 +34,7 @@ uniform float uResolution;
 
 void main() {
     vec3 position = readFromTexture(tPosition, SampleID, uGeoTexDim).xyz;
-    float group = decodeFloatRGB(readFromTexture(tGroup, SampleID, uGeoTexDim).rgb);
+    float group = unpackRGBToInt(readFromTexture(tGroup, SampleID, uGeoTexDim).rgb);
 
     position = (aTransform * vec4(position, 1.0)).xyz;
     gl_PointSize = 7.0;
@@ -43,9 +42,9 @@ void main() {
     gl_Position = vec4(((position - uBboxMin) / uBboxSize) * 2.0 - 1.0, 1.0);
 
     #if defined(dColorType_group)
-        vColor = readFromTexture(tColor, group, uColorTexDim).rgb;
+        vColor = readFromTexture(tColor, group, uColorTexDim);
     #elif defined(dColorType_groupInstance)
-        vColor = readFromTexture(tColor, aInstance * float(uGroupCount) + group, uColorTexDim).rgb;
+        vColor = readFromTexture(tColor, aInstance * float(uGroupCount) + group, uColorTexDim);
     #endif
 }
 `;

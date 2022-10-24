@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2021-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -18,27 +18,27 @@ import { Vec2, Vec3, Vec4 } from '../../../mol-math/linear-algebra';
 import { Box3D, Sphere3D } from '../../../mol-math/geometry';
 import { accumulate_frag } from '../../../mol-gl/shader/compute/color-smoothing/accumulate.frag';
 import { accumulate_vert } from '../../../mol-gl/shader/compute/color-smoothing/accumulate.vert';
-import { TextureImage } from '../../../mol-gl/renderable/util';
+import { isWebGL2 } from '../../../mol-gl/webgl/compat';
+import { TextureMeshValues } from '../../../mol-gl/renderable/texture-mesh';
+import { isTimingMode } from '../../../mol-util/debug';
 
 export const ColorAccumulateSchema = {
     drawCount: ValueSpec('number'),
     instanceCount: ValueSpec('number'),
     stride: ValueSpec('number'),
 
-    uTotalCount: UniformSpec('i'),
-    uInstanceCount: UniformSpec('i'),
-    uGroupCount: UniformSpec('i'),
+    uGroupCount: UniformSpec('i', 'material'),
 
     aTransform: AttributeSpec('float32', 16, 1),
     aInstance: AttributeSpec('float32', 1, 1),
     aSample: AttributeSpec('float32', 1, 0),
 
-    uGeoTexDim: UniformSpec('v2', 'buffered'),
-    tPosition: TextureSpec('texture', 'rgba', 'float', 'nearest'),
-    tGroup: TextureSpec('texture', 'rgba', 'float', 'nearest'),
+    uGeoTexDim: UniformSpec('v2', 'material'),
+    tPosition: TextureSpec('texture', 'rgba', 'float', 'nearest', 'material'),
+    tGroup: TextureSpec('texture', 'rgba', 'float', 'nearest', 'material'),
 
-    uColorTexDim: UniformSpec('v2'),
-    tColor: TextureSpec('image-uint8', 'rgb', 'ubyte', 'nearest'),
+    uColorTexDim: UniformSpec('v2', 'material'),
+    tColor: TextureSpec('texture', 'rgba', 'ubyte', 'nearest', 'material'),
     dColorType: DefineSpec('string', ['group', 'groupInstance', 'vertex', 'vertexInstance']),
 
     uCurrentSlice: UniformSpec('f'),
@@ -50,6 +50,7 @@ export const ColorAccumulateSchema = {
 };
 type ColorAccumulateValues = Values<typeof ColorAccumulateSchema>
 const ColorAccumulateName = 'color-accumulate';
+const ColorCountName = 'color-count';
 
 interface AccumulateInput {
     vertexCount: number
@@ -59,7 +60,7 @@ interface AccumulateInput {
     instanceBuffer: Float32Array
     positionTexture: Texture
     groupTexture: Texture
-    colorData: TextureImage<Uint8Array>
+    colorData: Texture
     colorType: 'group' | 'groupInstance'
 }
 
@@ -85,8 +86,6 @@ function getAccumulateRenderable(ctx: WebGLContext, input: AccumulateInput, box:
         ValueCell.updateIfChanged(v.instanceCount, input.instanceCount);
         ValueCell.updateIfChanged(v.stride, stride);
 
-        ValueCell.updateIfChanged(v.uTotalCount, input.vertexCount);
-        ValueCell.updateIfChanged(v.uInstanceCount, input.instanceCount);
         ValueCell.updateIfChanged(v.uGroupCount, input.groupCount);
 
         ValueCell.update(v.aTransform, input.transformBuffer);
@@ -96,7 +95,7 @@ function getAccumulateRenderable(ctx: WebGLContext, input: AccumulateInput, box:
         ValueCell.update(v.tPosition, input.positionTexture);
         ValueCell.update(v.tGroup, input.groupTexture);
 
-        ValueCell.update(v.uColorTexDim, Vec2.set(v.uColorTexDim.ref.value, input.colorData.width, input.colorData.height));
+        ValueCell.update(v.uColorTexDim, Vec2.set(v.uColorTexDim.ref.value, input.colorData.getWidth(), input.colorData.getHeight()));
         ValueCell.update(v.tColor, input.colorData);
         ValueCell.updateIfChanged(v.dColorType, input.colorType);
 
@@ -123,8 +122,6 @@ function createAccumulateRenderable(ctx: WebGLContext, input: AccumulateInput, b
         instanceCount: ValueCell.create(input.instanceCount),
         stride: ValueCell.create(stride),
 
-        uTotalCount: ValueCell.create(input.vertexCount),
-        uInstanceCount: ValueCell.create(input.instanceCount),
         uGroupCount: ValueCell.create(input.groupCount),
 
         aTransform: ValueCell.create(input.transformBuffer),
@@ -135,7 +132,7 @@ function createAccumulateRenderable(ctx: WebGLContext, input: AccumulateInput, b
         tPosition: ValueCell.create(input.positionTexture),
         tGroup: ValueCell.create(input.groupTexture),
 
-        uColorTexDim: ValueCell.create(Vec2.create(input.colorData.width, input.colorData.height)),
+        uColorTexDim: ValueCell.create(Vec2.create(input.colorData.getWidth(), input.colorData.getHeight())),
         tColor: ValueCell.create(input.colorData),
         dColorType: ValueCell.create(input.colorType),
 
@@ -148,7 +145,7 @@ function createAccumulateRenderable(ctx: WebGLContext, input: AccumulateInput, b
     };
 
     const schema = { ...ColorAccumulateSchema };
-    const shaderCode = ShaderCode('accumulate', accumulate_vert, accumulate_frag);
+    const shaderCode = ShaderCode('accumulate', accumulate_vert, accumulate_frag, { drawBuffers: 'required' });
     const renderItem = createComputeRenderItem(ctx, 'points', shaderCode, schema, values);
 
     return createComputeRenderable(renderItem, values);
@@ -172,30 +169,33 @@ export const ColorNormalizeSchema = {
     ...QuadSchema,
 
     tColor: TextureSpec('texture', 'rgba', 'float', 'nearest'),
+    tCount: TextureSpec('texture', 'alpha', 'float', 'nearest'),
     uTexSize: UniformSpec('v2'),
 
 };
 type ColorNormalizeValues = Values<typeof ColorNormalizeSchema>
 const ColorNormalizeName = 'color-normalize';
 
-function getNormalizeRenderable(ctx: WebGLContext, color: Texture): ComputeRenderable<ColorNormalizeValues> {
+function getNormalizeRenderable(ctx: WebGLContext, color: Texture, count: Texture): ComputeRenderable<ColorNormalizeValues> {
     if (ctx.namedComputeRenderables[ColorNormalizeName]) {
         const v = ctx.namedComputeRenderables[ColorNormalizeName].values as ColorNormalizeValues;
 
         ValueCell.update(v.tColor, color);
+        ValueCell.update(v.tCount, count);
         ValueCell.update(v.uTexSize, Vec2.set(v.uTexSize.ref.value, color.getWidth(), color.getHeight()));
 
         ctx.namedComputeRenderables[ColorNormalizeName].update();
     } else {
-        ctx.namedComputeRenderables[ColorNormalizeName] = createColorNormalizeRenderable(ctx, color);
+        ctx.namedComputeRenderables[ColorNormalizeName] = createColorNormalizeRenderable(ctx, color, count);
     }
     return ctx.namedComputeRenderables[ColorNormalizeName];
 }
 
-function createColorNormalizeRenderable(ctx: WebGLContext, color: Texture) {
+function createColorNormalizeRenderable(ctx: WebGLContext, color: Texture, count: Texture) {
     const values: ColorNormalizeValues = {
         ...QuadValues,
         tColor: ValueCell.create(color),
+        tCount: ValueCell.create(count),
         uTexSize: ValueCell.create(Vec2.create(color.getWidth(), color.getHeight())),
     };
 
@@ -247,47 +247,80 @@ interface ColorSmoothingInput extends AccumulateInput {
 }
 
 export function calcTextureMeshColorSmoothing(input: ColorSmoothingInput, resolution: number, stride: number, webgl: WebGLContext, texture?: Texture) {
+    const { drawBuffers } = webgl.extensions;
+    if (!drawBuffers) throw new Error('need WebGL draw buffers');
+
+    if (isTimingMode) webgl.timer.mark('calcTextureMeshColorSmoothing');
     const { gl, resources, state, extensions: { colorBufferHalfFloat, textureHalfFloat } } = webgl;
 
     const isInstanceType = input.colorType.endsWith('Instance');
     const box = Box3D.fromSphere3D(Box3D(), isInstanceType ? input.boundingSphere : input.invariantBoundingSphere);
+    const pad = 1 + resolution;
+    const expandedBox = Box3D.expand(Box3D(), box, Vec3.create(pad, pad, pad));
 
     const scaleFactor = 1 / resolution;
-    const scaledBox = Box3D.scale(Box3D(), box, scaleFactor);
+    const scaledBox = Box3D.scale(Box3D(), expandedBox, scaleFactor);
     const gridDim = Box3D.size(Vec3(), scaledBox);
     Vec3.ceil(gridDim, gridDim);
     Vec3.add(gridDim, gridDim, Vec3.create(2, 2, 2));
-    const { min } = box;
+    const { min } = expandedBox;
 
-    const [ dx, dy, dz ] = gridDim;
+    const [dx, dy, dz] = gridDim;
     const { texDimX: width, texDimY: height, texCols } = getTexture2dSize(gridDim);
     // console.log({ width, height, texCols, dim, resolution });
-
-    if (!webgl.namedTextures[ColorAccumulateName]) {
-        webgl.namedTextures[ColorAccumulateName] = colorBufferHalfFloat && textureHalfFloat
-            ? resources.texture('image-float16', 'rgba', 'fp16', 'nearest')
-            : resources.texture('image-float32', 'rgba', 'float', 'nearest');
-    }
-    const accumulateTexture = webgl.namedTextures[ColorAccumulateName];
-    accumulateTexture.define(width, height);
-
-    const accumulateRenderable = getAccumulateRenderable(webgl, input, box, resolution, stride);
-
-    //
-
-    const { uCurrentSlice, uCurrentX, uCurrentY } = accumulateRenderable.values;
 
     if (!webgl.namedFramebuffers[ColorAccumulateName]) {
         webgl.namedFramebuffers[ColorAccumulateName] = webgl.resources.framebuffer();
     }
     const framebuffer = webgl.namedFramebuffers[ColorAccumulateName];
-    framebuffer.bind();
 
-    setAccumulateDefaults(webgl);
-    state.currentRenderItemId = -1;
+    if (isWebGL2(gl)) {
+        if (!webgl.namedTextures[ColorAccumulateName]) {
+            webgl.namedTextures[ColorAccumulateName] = colorBufferHalfFloat && textureHalfFloat
+                ? resources.texture('image-float16', 'rgba', 'fp16', 'nearest')
+                : resources.texture('image-float32', 'rgba', 'float', 'nearest');
+        }
+
+        if (!webgl.namedTextures[ColorCountName]) {
+            webgl.namedTextures[ColorCountName] = resources.texture('image-float32', 'alpha', 'float', 'nearest');
+        }
+    } else {
+        // in webgl1 drawbuffers must be in the same format for some reason
+        // this is quite wasteful but good enough for medium size meshes
+
+        if (!webgl.namedTextures[ColorAccumulateName]) {
+            webgl.namedTextures[ColorAccumulateName] = resources.texture('image-float32', 'rgba', 'float', 'nearest');
+        }
+
+        if (!webgl.namedTextures[ColorCountName]) {
+            webgl.namedTextures[ColorCountName] = resources.texture('image-float32', 'rgba', 'float', 'nearest');
+        }
+    }
+
+    const accumulateTexture = webgl.namedTextures[ColorAccumulateName];
+    const countTexture = webgl.namedTextures[ColorCountName];
+
+    accumulateTexture.define(width, height);
+    countTexture.define(width, height);
+
     accumulateTexture.attachFramebuffer(framebuffer, 0);
-    gl.viewport(0, 0, width, height);
-    gl.scissor(0, 0, width, height);
+    countTexture.attachFramebuffer(framebuffer, 1);
+
+    const accumulateRenderable = getAccumulateRenderable(webgl, input, expandedBox, resolution, stride);
+    state.currentRenderItemId = -1;
+
+    framebuffer.bind();
+    drawBuffers.drawBuffers([
+        drawBuffers.COLOR_ATTACHMENT0,
+        drawBuffers.COLOR_ATTACHMENT1,
+    ]);
+
+    const { uCurrentSlice, uCurrentX, uCurrentY } = accumulateRenderable.values;
+
+    if (isTimingMode) webgl.timer.mark('ColorAccumulate.render');
+    setAccumulateDefaults(webgl);
+    state.viewport(0, 0, width, height);
+    state.scissor(0, 0, width, height);
     gl.clear(gl.COLOR_BUFFER_BIT);
     ValueCell.update(uCurrentY, 0);
     let currCol = 0;
@@ -303,42 +336,208 @@ export function calcTextureMeshColorSmoothing(input: ColorSmoothingInput, resolu
         // console.log({ i, currX, currY });
         ValueCell.update(uCurrentX, currX);
         ValueCell.update(uCurrentSlice, i);
-        gl.viewport(currX, currY, dx, dy);
-        gl.scissor(currX, currY, dx, dy);
+        state.viewport(currX, currY, dx, dy);
+        state.scissor(currX, currY, dx, dy);
         accumulateRenderable.render();
         ++currCol;
         currX += dx;
     }
 
+    accumulateTexture.detachFramebuffer(framebuffer, 0);
+    countTexture.detachFramebuffer(framebuffer, 1);
+    drawBuffers.drawBuffers([gl.COLOR_ATTACHMENT0, gl.NONE]);
+    if (isTimingMode) webgl.timer.markEnd('ColorAccumulate.render');
+
     // const accImage = new Float32Array(width * height * 4);
     // accumulateTexture.attachFramebuffer(framebuffer, 0);
     // webgl.readPixels(0, 0, width, height, accImage);
     // console.log(accImage);
-    // printTextureImage({ array: accImage, width, height }, 1 / 4);
+    // printTextureImage({ array: accImage, width, height }, { scale: 1 });
+
+    // const cntImage = new Float32Array(width * height * 4);
+    // countTexture.attachFramebuffer(framebuffer, 0);
+    // webgl.readPixels(0, 0, width, height, cntImage);
+    // console.log(cntImage);
+    // printTextureImage({ array: cntImage, width, height }, { scale: 1 });
 
     // normalize
 
-    if (!texture) texture = resources.texture('image-uint8', 'rgb', 'ubyte', 'linear');
+    if (isTimingMode) webgl.timer.mark('ColorNormalize.render');
+    if (!texture) texture = resources.texture('image-uint8', 'rgba', 'ubyte', 'linear');
     texture.define(width, height);
 
-    const normalizeRenderable = getNormalizeRenderable(webgl, accumulateTexture);
+    const normalizeRenderable = getNormalizeRenderable(webgl, accumulateTexture, countTexture);
+    state.currentRenderItemId = -1;
 
     setNormalizeDefaults(webgl);
-    state.currentRenderItemId = -1;
     texture.attachFramebuffer(framebuffer, 0);
-    gl.viewport(0, 0, width, height);
-    gl.scissor(0, 0, width, height);
+    state.viewport(0, 0, width, height);
+    state.scissor(0, 0, width, height);
     gl.clear(gl.COLOR_BUFFER_BIT);
     normalizeRenderable.render();
+    if (isTimingMode) webgl.timer.markEnd('ColorNormalize.render');
 
     // const normImage = new Uint8Array(width * height * 4);
     // texture.attachFramebuffer(framebuffer, 0);
     // webgl.readPixels(0, 0, width, height, normImage);
     // console.log(normImage);
-    // printTextureImage({ array: normImage, width, height }, 1 / 4);
+    // printTextureImage({ array: normImage, width, height }, { scale: 1 });
 
     const gridTransform = Vec4.create(min[0], min[1], min[2], scaleFactor);
     const type = isInstanceType ? 'volumeInstance' : 'volume';
+    if (isTimingMode) webgl.timer.markEnd('calcTextureMeshColorSmoothing');
+
+    // printTextureImage(readTexture(webgl, texture), { scale: 0.75 });
 
     return { texture, gridDim, gridTexDim: Vec2.create(width, height), gridTransform, type };
+}
+
+//
+
+const ColorSmoothingRgbName = 'color-smoothing-rgb';
+const ColorSmoothingRgbaName = 'color-smoothing-rgba';
+const ColorSmoothingAlphaName = 'color-smoothing-alpha';
+
+function isSupportedColorType(x: string): x is 'group' | 'groupInstance' {
+    return x === 'group' || x === 'groupInstance';
+}
+
+export function applyTextureMeshColorSmoothing(values: TextureMeshValues, resolution: number, stride: number, webgl: WebGLContext, colorTexture?: Texture) {
+    if (!isSupportedColorType(values.dColorType.ref.value)) return;
+
+    stride *= 3; // triple because TextureMesh is never indexed (no elements buffer)
+
+    if (!webgl.namedTextures[ColorSmoothingRgbName]) {
+        webgl.namedTextures[ColorSmoothingRgbName] = webgl.resources.texture('image-uint8', 'rgb', 'ubyte', 'nearest');
+    }
+    const colorData = webgl.namedTextures[ColorSmoothingRgbName];
+    colorData.load(values.tColor.ref.value);
+
+    const smoothingData = calcTextureMeshColorSmoothing({
+        vertexCount: values.uVertexCount.ref.value,
+        instanceCount: values.uInstanceCount.ref.value,
+        groupCount: values.uGroupCount.ref.value,
+        transformBuffer: values.aTransform.ref.value,
+        instanceBuffer: values.aInstance.ref.value,
+        positionTexture: values.tPosition.ref.value,
+        groupTexture: values.tGroup.ref.value,
+        colorData,
+        colorType: values.dColorType.ref.value,
+        boundingSphere: values.boundingSphere.ref.value,
+        invariantBoundingSphere: values.invariantBoundingSphere.ref.value,
+    }, resolution, stride, webgl, colorTexture);
+
+    ValueCell.updateIfChanged(values.dColorType, smoothingData.type);
+    ValueCell.update(values.tColorGrid, smoothingData.texture);
+    ValueCell.update(values.uColorTexDim, smoothingData.gridTexDim);
+    ValueCell.update(values.uColorGridDim, smoothingData.gridDim);
+    ValueCell.update(values.uColorGridTransform, smoothingData.gridTransform);
+}
+
+function isSupportedOverpaintType(x: string): x is 'groupInstance' {
+    return x === 'groupInstance';
+}
+
+export function applyTextureMeshOverpaintSmoothing(values: TextureMeshValues, resolution: number, stride: number, webgl: WebGLContext, colorTexture?: Texture) {
+    if (!isSupportedOverpaintType(values.dOverpaintType.ref.value)) return;
+
+    stride *= 3; // triple because TextureMesh is never indexed (no elements buffer)
+
+    if (!webgl.namedTextures[ColorSmoothingRgbaName]) {
+        webgl.namedTextures[ColorSmoothingRgbaName] = webgl.resources.texture('image-uint8', 'rgba', 'ubyte', 'nearest');
+    }
+    const colorData = webgl.namedTextures[ColorSmoothingRgbaName];
+    colorData.load(values.tOverpaint.ref.value);
+
+    const smoothingData = calcTextureMeshColorSmoothing({
+        vertexCount: values.uVertexCount.ref.value,
+        instanceCount: values.uInstanceCount.ref.value,
+        groupCount: values.uGroupCount.ref.value,
+        transformBuffer: values.aTransform.ref.value,
+        instanceBuffer: values.aInstance.ref.value,
+        positionTexture: values.tPosition.ref.value,
+        groupTexture: values.tGroup.ref.value,
+        colorData,
+        colorType: values.dOverpaintType.ref.value,
+        boundingSphere: values.boundingSphere.ref.value,
+        invariantBoundingSphere: values.invariantBoundingSphere.ref.value,
+    }, resolution, stride, webgl, colorTexture);
+
+    ValueCell.updateIfChanged(values.dOverpaintType, smoothingData.type);
+    ValueCell.update(values.tOverpaintGrid, smoothingData.texture);
+    ValueCell.update(values.uOverpaintTexDim, smoothingData.gridTexDim);
+    ValueCell.update(values.uOverpaintGridDim, smoothingData.gridDim);
+    ValueCell.update(values.uOverpaintGridTransform, smoothingData.gridTransform);
+}
+
+function isSupportedTransparencyType(x: string): x is 'groupInstance' {
+    return x === 'groupInstance';
+}
+
+export function applyTextureMeshTransparencySmoothing(values: TextureMeshValues, resolution: number, stride: number, webgl: WebGLContext, colorTexture?: Texture) {
+    if (!isSupportedTransparencyType(values.dTransparencyType.ref.value)) return;
+
+    stride *= 3; // triple because TextureMesh is never indexed (no elements buffer)
+
+    if (!webgl.namedTextures[ColorSmoothingAlphaName]) {
+        webgl.namedTextures[ColorSmoothingAlphaName] = webgl.resources.texture('image-uint8', 'alpha', 'ubyte', 'nearest');
+    }
+    const colorData = webgl.namedTextures[ColorSmoothingAlphaName];
+    colorData.load(values.tTransparency.ref.value);
+
+    const smoothingData = calcTextureMeshColorSmoothing({
+        vertexCount: values.uVertexCount.ref.value,
+        instanceCount: values.uInstanceCount.ref.value,
+        groupCount: values.uGroupCount.ref.value,
+        transformBuffer: values.aTransform.ref.value,
+        instanceBuffer: values.aInstance.ref.value,
+        positionTexture: values.tPosition.ref.value,
+        groupTexture: values.tGroup.ref.value,
+        colorData,
+        colorType: values.dTransparencyType.ref.value,
+        boundingSphere: values.boundingSphere.ref.value,
+        invariantBoundingSphere: values.invariantBoundingSphere.ref.value,
+    }, resolution, stride, webgl, colorTexture);
+
+    ValueCell.updateIfChanged(values.dTransparencyType, smoothingData.type);
+    ValueCell.update(values.tTransparencyGrid, smoothingData.texture);
+    ValueCell.update(values.uTransparencyTexDim, smoothingData.gridTexDim);
+    ValueCell.update(values.uTransparencyGridDim, smoothingData.gridDim);
+    ValueCell.update(values.uTransparencyGridTransform, smoothingData.gridTransform);
+}
+
+function isSupportedSubstanceType(x: string): x is 'groupInstance' {
+    return x === 'groupInstance';
+}
+
+export function applyTextureMeshSubstanceSmoothing(values: TextureMeshValues, resolution: number, stride: number, webgl: WebGLContext, colorTexture?: Texture) {
+    if (!isSupportedSubstanceType(values.dSubstanceType.ref.value)) return;
+
+    stride *= 3; // triple because TextureMesh is never indexed (no elements buffer)
+
+    if (!webgl.namedTextures[ColorSmoothingRgbaName]) {
+        webgl.namedTextures[ColorSmoothingRgbaName] = webgl.resources.texture('image-uint8', 'rgba', 'ubyte', 'nearest');
+    }
+    const colorData = webgl.namedTextures[ColorSmoothingRgbaName];
+    colorData.load(values.tSubstance.ref.value);
+
+    const smoothingData = calcTextureMeshColorSmoothing({
+        vertexCount: values.uVertexCount.ref.value,
+        instanceCount: values.uInstanceCount.ref.value,
+        groupCount: values.uGroupCount.ref.value,
+        transformBuffer: values.aTransform.ref.value,
+        instanceBuffer: values.aInstance.ref.value,
+        positionTexture: values.tPosition.ref.value,
+        groupTexture: values.tGroup.ref.value,
+        colorData,
+        colorType: values.dSubstanceType.ref.value,
+        boundingSphere: values.boundingSphere.ref.value,
+        invariantBoundingSphere: values.invariantBoundingSphere.ref.value,
+    }, resolution, stride, webgl, colorTexture);
+
+    ValueCell.updateIfChanged(values.dSubstanceType, smoothingData.type);
+    ValueCell.update(values.tSubstanceGrid, smoothingData.texture);
+    ValueCell.update(values.uSubstanceTexDim, smoothingData.gridTexDim);
+    ValueCell.update(values.uSubstanceGridDim, smoothingData.gridDim);
+    ValueCell.update(values.uSubstanceGridTransform, smoothingData.gridTransform);
 }

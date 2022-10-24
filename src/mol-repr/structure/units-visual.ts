@@ -1,17 +1,17 @@
 /**
- * Copyright (c) 2018-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
 
 import { ParamDefinition as PD } from '../../mol-util/param-definition';
-import { Structure, Unit, StructureElement } from '../../mol-model/structure';
+import { Structure, Unit, StructureElement, Bond } from '../../mol-model/structure';
 import { RepresentationProps } from '../representation';
 import { Visual, VisualContext } from '../visual';
 import { Geometry, GeometryUtils } from '../../mol-geo/geometry/geometry';
 import { LocationIterator } from '../../mol-geo/util/location-iterator';
 import { Theme } from '../../mol-theme/theme';
-import { createUnitsTransform, includesUnitKind } from './visual/util/common';
+import { createUnitsTransform, includesUnitKind, StructureGroup } from './visual/util/common';
 import { createRenderObject, GraphicsRenderObject, RenderObjectValues } from '../../mol-gl/render-object';
 import { PickingId } from '../../mol-geo/geometry/picking';
 import { Loci, isEveryLoci, EmptyLoci } from '../../mol-model/loci';
@@ -40,14 +40,13 @@ import { StructureParams, StructureMeshParams, StructureSpheresParams, Structure
 import { Clipping } from '../../mol-theme/clipping';
 import { WebGLContext } from '../../mol-gl/webgl/context';
 import { isPromiseLike } from '../../mol-util/type-helpers';
-
-export type StructureGroup = { structure: Structure, group: Unit.SymmetryGroup }
+import { Substance } from '../../mol-theme/substance';
 
 export interface UnitsVisual<P extends RepresentationProps = {}> extends Visual<StructureGroup, P> { }
 
-function createUnitsRenderObject<G extends Geometry>(group: Unit.SymmetryGroup, geometry: G, locationIt: LocationIterator, theme: Theme, props: PD.Values<Geometry.Params<G>>, materialId: number) {
+function createUnitsRenderObject<G extends Geometry>(structureGroup: StructureGroup, geometry: G, locationIt: LocationIterator, theme: Theme, props: PD.Values<StructureParams & Geometry.Params<G>>, materialId: number) {
     const { createValues, createRenderableState } = Geometry.getUtils(geometry);
-    const transform = createUnitsTransform(group);
+    const transform = createUnitsTransform(structureGroup, props.includeParent);
     const values = createValues(geometry, transform, locationIt, theme, props);
     const state = createRenderableState(props);
     return createRenderObject(geometry.kind, values, state, materialId);
@@ -73,6 +72,7 @@ export function UnitsVisual<G extends Geometry, P extends StructureParams & Geom
     const { defaultProps, createGeometry, createLocationIterator, getLoci, eachLocation, setUpdateState, mustRecreate, processValues, dispose } = builder;
     const { createEmpty: createEmptyGeometry, updateValues, updateBoundingSphere, updateRenderableState, createPositionIterator } = builder.geometryUtils;
     const updateState = VisualUpdateState.create();
+    const previousMark: Visual.PreviousMark = { loci: EmptyLoci, action: MarkerAction.None, status: -1 };
 
     let renderObject: GraphicsRenderObject<G['kind']> | undefined;
 
@@ -85,6 +85,7 @@ export function UnitsVisual<G extends Geometry, P extends StructureParams & Geom
     let currentStructureGroup: StructureGroup;
 
     let geometry: G;
+    let geometryVersion = -1;
     let locationIt: LocationIterator;
     let positionIt: LocationIterator;
 
@@ -123,6 +124,10 @@ export function UnitsVisual<G extends Geometry, P extends StructureParams & Geom
         if (currentStructureGroup.structure.child !== newStructureGroup.structure.child) {
             // console.log('new child');
             updateState.createGeometry = true;
+        }
+
+        if (newProps.instanceGranularity !== currentProps.instanceGranularity) {
+            updateState.updateTransform = true;
         }
 
         if (!deepEqual(newProps.unitKinds, currentProps.unitKinds)) {
@@ -179,7 +184,7 @@ export function UnitsVisual<G extends Geometry, P extends StructureParams & Geom
         if (updateState.createNew) {
             locationIt = createLocationIterator(newStructureGroup);
             if (newGeometry) {
-                renderObject = createUnitsRenderObject(newStructureGroup.group, newGeometry, locationIt, newTheme, newProps, materialId);
+                renderObject = createUnitsRenderObject(newStructureGroup, newGeometry, locationIt, newTheme, newProps, materialId);
                 positionIt = createPositionIterator(newGeometry, renderObject.values);
             } else {
                 throw new Error('expected geometry to be given');
@@ -193,12 +198,16 @@ export function UnitsVisual<G extends Geometry, P extends StructureParams & Geom
                 // console.log('update transform');
                 locationIt = createLocationIterator(newStructureGroup);
                 const { instanceCount, groupCount } = locationIt;
-                createMarkers(instanceCount * groupCount, renderObject.values);
+                if (newProps.instanceGranularity) {
+                    createMarkers(instanceCount, 'instance', renderObject.values);
+                } else {
+                    createMarkers(instanceCount * groupCount, 'groupInstance', renderObject.values);
+                }
             }
 
             if (updateState.updateMatrix) {
                 // console.log('update matrix');
-                createUnitsTransform(newStructureGroup.group, renderObject.values);
+                createUnitsTransform(newStructureGroup, newProps.includeParent, renderObject.values);
             }
 
             if (updateState.createGeometry) {
@@ -206,6 +215,7 @@ export function UnitsVisual<G extends Geometry, P extends StructureParams & Geom
                 if (newGeometry) {
                     ValueCell.updateIfChanged(renderObject.values.drawCount, Geometry.getDrawCount(newGeometry));
                     ValueCell.updateIfChanged(renderObject.values.uVertexCount, Geometry.getVertexCount(newGeometry));
+                    ValueCell.updateIfChanged(renderObject.values.uGroupCount, Geometry.getGroupCount(newGeometry));
                 } else {
                     throw new Error('expected geometry to be given');
                 }
@@ -236,7 +246,10 @@ export function UnitsVisual<G extends Geometry, P extends StructureParams & Geom
         currentProps = newProps;
         currentTheme = newTheme;
         currentStructureGroup = newStructureGroup;
-        if (newGeometry) geometry = newGeometry;
+        if (newGeometry) {
+            geometry = newGeometry;
+            geometryVersion += 1;
+        }
     }
 
     function _createGeometry(ctx: VisualContext, unit: Unit, structure: Structure, theme: Theme, props: PD.Values<P>, geometry?: G) {
@@ -254,11 +267,44 @@ export function UnitsVisual<G extends Geometry, P extends StructureParams & Geom
         return false;
     }
 
+    function eachInstance(loci: Loci, structureGroup: StructureGroup, apply: (interval: Interval) => boolean) {
+        let changed = false;
+        if (Bond.isLoci(loci)) {
+            const { structure, group } = structureGroup;
+            if (!Structure.areEquivalent(loci.structure, structure)) return false;
+            for (const b of loci.bonds) {
+                if (b.aUnit !== b.bUnit) continue;
+                const unitIdx = group.unitIndexMap.get(b.aUnit.id);
+                if (unitIdx !== undefined) {
+                    if (apply(Interval.ofSingleton(unitIdx))) changed = true;
+                }
+            }
+        } else if (StructureElement.Loci.is(loci)) {
+            const { structure, group } = structureGroup;
+            if (!Structure.areEquivalent(loci.structure, structure)) return false;
+            for (const e of loci.elements) {
+                const unitIdx = group.unitIndexMap.get(e.unit.id);
+                if (unitIdx !== undefined) {
+                    if (apply(Interval.ofSingleton(unitIdx))) changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
     function lociApply(loci: Loci, apply: (interval: Interval) => boolean, isMarking: boolean) {
         if (lociIsSuperset(loci)) {
-            return apply(Interval.ofBounds(0, locationIt.groupCount * locationIt.instanceCount));
+            if (currentProps.instanceGranularity) {
+                return apply(Interval.ofBounds(0, locationIt.instanceCount));
+            } else {
+                return apply(Interval.ofBounds(0, locationIt.groupCount * locationIt.instanceCount));
+            }
         } else {
-            return eachLocation(loci, currentStructureGroup, apply, isMarking);
+            if (currentProps.instanceGranularity) {
+                return eachInstance(loci, currentStructureGroup, apply);
+            } else {
+                return eachLocation(loci, currentStructureGroup, apply, isMarking);
+            }
         }
     }
 
@@ -270,7 +316,8 @@ export function UnitsVisual<G extends Geometry, P extends StructureParams & Geom
 
     return {
         get groupCount() { return locationIt ? locationIt.count : 0; },
-        get renderObject () { return locationIt && locationIt.count ? renderObject : undefined; },
+        get renderObject() { return locationIt && locationIt.count ? renderObject : undefined; },
+        get geometryVersion() { return geometryVersion; },
         createOrUpdate(ctx: VisualContext, theme: Theme, props: PD.Values<P>, structureGroup?: StructureGroup) {
             prepareUpdate(theme, props, structureGroup || currentStructureGroup);
             if (updateState.createGeometry) {
@@ -291,7 +338,18 @@ export function UnitsVisual<G extends Geometry, P extends StructureParams & Geom
             return renderObject ? getLoci(pickingId, currentStructureGroup, renderObject.id) : EmptyLoci;
         },
         mark(loci: Loci, action: MarkerAction) {
-            return Visual.mark(renderObject, loci, action, lociApply);
+            let hasInvariantId = true;
+            if (StructureElement.Loci.is(loci)) {
+                hasInvariantId = false;
+                const { invariantId } = currentStructureGroup.group.units[0];
+                for (const e of loci.elements) {
+                    if (e.unit.invariantId === invariantId) {
+                        hasInvariantId = true;
+                        break;
+                    }
+                }
+            }
+            return hasInvariantId ? Visual.mark(renderObject, loci, action, lociApply, previousMark) : false;
         },
         setVisibility(visible: boolean) {
             Visual.setVisibility(renderObject, visible);
@@ -308,11 +366,17 @@ export function UnitsVisual<G extends Geometry, P extends StructureParams & Geom
         setTransform(matrix?: Mat4, instanceMatrices?: Float32Array | null) {
             Visual.setTransform(renderObject, matrix, instanceMatrices);
         },
-        setOverpaint(overpaint: Overpaint) {
-            Visual.setOverpaint(renderObject, overpaint, lociApply, true);
+        setOverpaint(overpaint: Overpaint, webgl?: WebGLContext) {
+            const smoothing = { geometry, props: currentProps, webgl };
+            Visual.setOverpaint(renderObject, overpaint, lociApply, true, smoothing);
         },
-        setTransparency(transparency: Transparency) {
-            Visual.setTransparency(renderObject, transparency, lociApply, true);
+        setTransparency(transparency: Transparency, webgl?: WebGLContext) {
+            const smoothing = { geometry, props: currentProps, webgl };
+            Visual.setTransparency(renderObject, transparency, lociApply, true, smoothing);
+        },
+        setSubstance(substance: Substance, webgl?: WebGLContext) {
+            const smoothing = { geometry, props: currentProps, webgl };
+            Visual.setSubstance(renderObject, substance, lociApply, true, smoothing);
         },
         setClipping(clipping: Clipping) {
             Visual.setClipping(renderObject, clipping, lociApply, true);

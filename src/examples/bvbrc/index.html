@@ -83,9 +83,6 @@
     $('format').value = format;
     $('format').onchange = function (e) { format = e.target.value; }*/
 
-    BVBRCMolStarWrapper.init('app' /** or document.getElementById('app') */);
-    BVBRCMolStarWrapper.setBackground(0xffffff);
-
     let url;
     if (pdbId) {
         url = !isRcsb ? 'https://www.ebi.ac.uk/pdbe/static/entry/' + pdbId.toLowerCase() + '_updated.cif' : 'https://files.rcsb.org/download/' + pdbId + '-sf.cif';
@@ -95,7 +92,10 @@
     }
 
     if (url) {
-        BVBRCMolStarWrapper.load({url, format, selection, displaySpikeSequence: true});
+        BVBRCMolStarWrapper.init('app' /** or document.getElementById('app') */).then(() => {
+            BVBRCMolStarWrapper.setBackground(0xffffff);
+            BVBRCMolStarWrapper.load({url, format, selection, displaySpikeSequence: true});
+        });
     }
 
     addControl('Apply HeatMap', () => BVBRCMolStarWrapper.coloring.applyHeatMap('/build/examples/bvbrc/pdb1jsd.ent.r4s'));

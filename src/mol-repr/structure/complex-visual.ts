@@ -1,12 +1,12 @@
 /**
- * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
 
 import { ParamDefinition as PD } from '../../mol-util/param-definition';
 import { Visual, VisualContext } from '../visual';
-import { Structure, StructureElement } from '../../mol-model/structure';
+import { Bond, Structure, StructureElement } from '../../mol-model/structure';
 import { Geometry, GeometryUtils } from '../../mol-geo/geometry/geometry';
 import { LocationIterator } from '../../mol-geo/util/location-iterator';
 import { Theme } from '../../mol-theme/theme';
@@ -36,8 +36,9 @@ import { Clipping } from '../../mol-theme/clipping';
 import { TextureMesh } from '../../mol-geo/geometry/texture-mesh/texture-mesh';
 import { WebGLContext } from '../../mol-gl/webgl/context';
 import { isPromiseLike } from '../../mol-util/type-helpers';
+import { Substance } from '../../mol-theme/substance';
 
-export interface  ComplexVisual<P extends StructureParams> extends Visual<Structure, P> { }
+export interface ComplexVisual<P extends StructureParams> extends Visual<Structure, P> { }
 
 function createComplexRenderObject<G extends Geometry>(structure: Structure, geometry: G, locationIt: LocationIterator, theme: Theme, props: PD.Values<Geometry.Params<G>>, materialId: number) {
     const { createValues, createRenderableState } = Geometry.getUtils(geometry);
@@ -67,6 +68,7 @@ export function ComplexVisual<G extends Geometry, P extends StructureParams & Ge
     const { defaultProps, createGeometry, createLocationIterator, getLoci, eachLocation, setUpdateState, mustRecreate, processValues, dispose } = builder;
     const { updateValues, updateBoundingSphere, updateRenderableState, createPositionIterator } = builder.geometryUtils;
     const updateState = VisualUpdateState.create();
+    const previousMark: Visual.PreviousMark = { loci: EmptyLoci, action: MarkerAction.None, status: -1 };
 
     let renderObject: GraphicsRenderObject<G['kind']> | undefined;
 
@@ -79,6 +81,7 @@ export function ComplexVisual<G extends Geometry, P extends StructureParams & Ge
     let currentStructure: Structure;
 
     let geometry: G;
+    let geometryVersion = -1;
     let locationIt: LocationIterator;
     let positionIt: LocationIterator;
 
@@ -123,6 +126,10 @@ export function ComplexVisual<G extends Geometry, P extends StructureParams & Ge
             updateState.createGeometry = true;
         }
 
+        if (newProps.instanceGranularity !== currentProps.instanceGranularity) {
+            updateState.updateTransform = true;
+        }
+
         if (updateState.updateSize && !('uSize' in renderObject.values)) {
             updateState.createGeometry = true;
         }
@@ -151,13 +158,18 @@ export function ComplexVisual<G extends Geometry, P extends StructureParams & Ge
                 // console.log('update transform')
                 locationIt = createLocationIterator(newStructure);
                 const { instanceCount, groupCount } = locationIt;
-                createMarkers(instanceCount * groupCount, renderObject.values);
+                if (newProps.instanceGranularity) {
+                    createMarkers(instanceCount, 'instance', renderObject.values);
+                } else {
+                    createMarkers(instanceCount * groupCount, 'groupInstance', renderObject.values);
+                }
             }
 
             if (updateState.createGeometry) {
                 if (newGeometry) {
                     ValueCell.updateIfChanged(renderObject.values.drawCount, Geometry.getDrawCount(newGeometry));
                     ValueCell.updateIfChanged(renderObject.values.uVertexCount, Geometry.getVertexCount(newGeometry));
+                    ValueCell.updateIfChanged(renderObject.values.uGroupCount, Geometry.getGroupCount(newGeometry));
                 } else {
                     throw new Error('expected geometry to be given');
                 }
@@ -186,7 +198,10 @@ export function ComplexVisual<G extends Geometry, P extends StructureParams & Ge
         currentProps = newProps;
         currentTheme = newTheme;
         currentStructure = newStructure;
-        if (newGeometry) geometry = newGeometry;
+        if (newGeometry) {
+            geometry = newGeometry;
+            geometryVersion += 1;
+        }
     }
 
     function lociIsSuperset(loci: Loci) {
@@ -198,11 +213,27 @@ export function ComplexVisual<G extends Geometry, P extends StructureParams & Ge
         return false;
     }
 
+    function eachInstance(loci: Loci, structure: Structure, apply: (interval: Interval) => boolean) {
+        let changed = false;
+        if (!StructureElement.Loci.is(loci) && !Bond.isLoci(loci)) return false;
+        if (!Structure.areEquivalent(loci.structure, structure)) return false;
+        if (apply(Interval.ofSingleton(0))) changed = true;
+        return changed;
+    }
+
     function lociApply(loci: Loci, apply: (interval: Interval) => boolean, isMarking: boolean) {
         if (lociIsSuperset(loci)) {
-            return apply(Interval.ofBounds(0, locationIt.groupCount * locationIt.instanceCount));
+            if (currentProps.instanceGranularity) {
+                return apply(Interval.ofBounds(0, locationIt.instanceCount));
+            } else {
+                return apply(Interval.ofBounds(0, locationIt.groupCount * locationIt.instanceCount));
+            }
         } else {
-            return eachLocation(loci, currentStructure, apply, isMarking);
+            if (currentProps.instanceGranularity) {
+                return eachInstance(loci, currentStructure, apply);
+            } else {
+                return eachLocation(loci, currentStructure, apply, isMarking);
+            }
         }
     }
 
@@ -214,7 +245,8 @@ export function ComplexVisual<G extends Geometry, P extends StructureParams & Ge
 
     return {
         get groupCount() { return locationIt ? locationIt.count : 0; },
-        get renderObject () { return locationIt && locationIt.count ? renderObject : undefined; },
+        get renderObject() { return locationIt && locationIt.count ? renderObject : undefined; },
+        get geometryVersion() { return geometryVersion; },
         createOrUpdate(ctx: VisualContext, theme: Theme, props: Partial<PD.Values<P>> = {}, structure?: Structure) {
             prepareUpdate(theme, props, structure || currentStructure);
             if (updateState.createGeometry) {
@@ -235,7 +267,7 @@ export function ComplexVisual<G extends Geometry, P extends StructureParams & Ge
             return renderObject ? getLoci(pickingId, currentStructure, renderObject.id) : EmptyLoci;
         },
         mark(loci: Loci, action: MarkerAction) {
-            return Visual.mark(renderObject, loci, action, lociApply);
+            return Visual.mark(renderObject, loci, action, lociApply, previousMark);
         },
         setVisibility(visible: boolean) {
             Visual.setVisibility(renderObject, visible);
@@ -252,11 +284,17 @@ export function ComplexVisual<G extends Geometry, P extends StructureParams & Ge
         setTransform(matrix?: Mat4, instanceMatrices?: Float32Array | null) {
             Visual.setTransform(renderObject, matrix, instanceMatrices);
         },
-        setOverpaint(overpaint: Overpaint) {
-            Visual.setOverpaint(renderObject, overpaint, lociApply, true);
+        setOverpaint(overpaint: Overpaint, webgl?: WebGLContext) {
+            const smoothing = { geometry, props: currentProps, webgl };
+            Visual.setOverpaint(renderObject, overpaint, lociApply, true, smoothing);
         },
-        setTransparency(transparency: Transparency) {
-            Visual.setTransparency(renderObject, transparency, lociApply, true);
+        setTransparency(transparency: Transparency, webgl?: WebGLContext) {
+            const smoothing = { geometry, props: currentProps, webgl };
+            Visual.setTransparency(renderObject, transparency, lociApply, true, smoothing);
+        },
+        setSubstance(substance: Substance, webgl?: WebGLContext) {
+            const smoothing = { geometry, props: currentProps, webgl };
+            Visual.setSubstance(renderObject, substance, lociApply, true, smoothing);
         },
         setClipping(clipping: Clipping) {
             Visual.setClipping(renderObject, clipping, lociApply, true);

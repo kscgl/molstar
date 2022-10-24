@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2017-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -22,9 +22,10 @@ import { NumberArray } from '../../../../mol-util/type-helpers';
 import { StructureProperties } from '../properties';
 import { BoundaryHelper } from '../../../../mol-math/geometry/boundary-helper';
 import { Boundary } from '../../../../mol-math/geometry/boundary';
+import { IntTuple } from '../../../../mol-data/int/tuple';
 
 // avoiding namespace lookup improved performance in Chrome (Aug 2020)
-const osSize = OrderedSet.size;
+const itDiff = IntTuple.diff;
 
 /** Represents multiple structure element index locations */
 export interface Loci {
@@ -65,7 +66,10 @@ export namespace Loci {
     }
 
     export function isEmpty(loci: Loci) {
-        return size(loci) === 0;
+        for (const u of loci.elements) {
+            if (OrderedSet.size(u.indices) > 0) return false;
+        }
+        return true;
     }
 
     export function isWholeStructure(loci: Loci) {
@@ -74,7 +78,15 @@ export namespace Loci {
 
     export function size(loci: Loci) {
         let s = 0;
-        for (const u of loci.elements) s += osSize(u.indices);
+        // inlined for max performance, crucial for marking large cellpack models
+        // `for (const u of loci.elements) s += OrderedSet.size(u.indices);`
+        for (const { indices } of loci.elements) {
+            if (typeof indices === 'number') {
+                s += itDiff(indices as IntTuple);
+            } else {
+                s += (indices as SortedArray).length;
+            }
+        }
         return s;
     }
 
@@ -131,7 +143,7 @@ export namespace Loci {
         return Structure.create(units, { parent: loci.structure.parent });
     }
 
-    // TODO: there should be a version that property supports partitioned units
+    // TODO: there should be a version that properly supports partitioned units
     export function remap(loci: Loci, structure: Structure): Loci {
         if (structure === loci.structure) return loci;
 
@@ -241,6 +253,14 @@ export namespace Loci {
         return isSubset;
     }
 
+    function makeIndexSet(newIndices: ArrayLike<UnitIndex>): OrderedSet<UnitIndex> {
+        if (newIndices.length > 3 && SortedArray.isRange(newIndices)) {
+            return Interval.ofRange(newIndices[0], newIndices[newIndices.length - 1]);
+        } else {
+            return SortedArray.ofSortedArray(newIndices);
+        }
+    }
+
     export function extendToWholeResidues(loci: Loci, restrictToConformation?: boolean): Loci {
         const elements: Loci['elements'][0][] = [];
         const residueAltIds = new Set<string>();
@@ -285,7 +305,7 @@ export namespace Loci {
                     }
                 }
 
-                elements[elements.length] = { unit: lociElement.unit, indices: SortedArray.ofSortedArray(newIndices) };
+                elements[elements.length] = { unit: lociElement.unit, indices: makeIndexSet(newIndices) };
             } else {
                 // coarse elements are already by-residue
                 elements[elements.length] = lociElement;
@@ -305,14 +325,6 @@ export namespace Loci {
 
     function isWholeUnit(element: Loci['elements'][0]) {
         return element.unit.elements.length === OrderedSet.size(element.indices);
-    }
-
-    function makeIndexSet(newIndices: number[]): OrderedSet<UnitIndex> {
-        if (newIndices.length > 12 && newIndices[newIndices.length - 1] - newIndices[0] === newIndices.length - 1) {
-            return Interval.ofRange(newIndices[0], newIndices[newIndices.length - 1]);
-        } else {
-            return SortedArray.ofSortedArray(newIndices);
-        }
     }
 
     function collectChains(unit: Unit, chainIndices: Set<ChainIndex>, elements: Loci['elements'][0][]) {
@@ -458,7 +470,10 @@ export namespace Loci {
     }
 
     function getUnitIndices(elements: SortedArray<ElementIndex>, indices: SortedArray<ElementIndex>) {
-        return SortedArray.indicesOf<ElementIndex, UnitIndex>(elements, indices);
+        if (SortedArray.isRange(elements) && SortedArray.areEqual(elements, indices)) {
+            return Interval.ofLength(elements.length);
+        }
+        return makeIndexSet(SortedArray.indicesOf<ElementIndex, UnitIndex>(elements, indices));
     }
 
     export function extendToAllInstances(loci: Loci): Loci {
@@ -482,7 +497,30 @@ export namespace Loci {
             if (!elementIndices) continue;
 
             const indices = getUnitIndices(unit.elements, elementIndices);
-            elements[elements.length] = { unit, indices };
+            if (OrderedSet.size(indices)) {
+                elements[elements.length] = { unit, indices };
+            }
+        }
+
+        return Loci(loci.structure, elements);
+    }
+
+    export function extendToWholeOperators(loci: Loci): Loci {
+        const elements: Loci['elements'][0][] = [];
+        const operators = new Set<string>();
+        const { units } = loci.structure;
+
+        for (let i = 0, len = loci.elements.length; i < len; i++) {
+            const e = loci.elements[i];
+            operators.add(e.unit.conformation.operator.name);
+        }
+
+        for (let i = 0, il = units.length; i < il; ++i) {
+            const unit = units[i];
+            if (operators.has(unit.conformation.operator.name)) {
+                const indices = OrderedSet.ofBounds(0, unit.elements.length) as OrderedSet<UnitIndex>;
+                elements[elements.length] = { unit, indices };
+            }
         }
 
         return Loci(loci.structure, elements);
@@ -543,6 +581,20 @@ export namespace Loci {
     export function getPrincipalAxes(loci: Loci): PrincipalAxes {
         const elementCount = size(loci);
         const positions = toPositionsArray(loci, new Float32Array(3 * elementCount));
+        return PrincipalAxes.ofPositions(positions);
+    }
+
+    export function getPrincipalAxesMany(locis: Loci[]): PrincipalAxes {
+        let elementCount = 0;
+        locis.forEach(l => {
+            elementCount += size(l);
+        });
+        const positions = new Float32Array(3 * elementCount);
+        let offset = 0;
+        locis.forEach(l => {
+            toPositionsArray(l, positions, offset);
+            offset += size(l) * 3;
+        });
         return PrincipalAxes.ofPositions(positions);
     }
 
@@ -640,7 +692,7 @@ export namespace Loci {
             opQueries.length === 1
                 ? opQueries[0]
                 // Need to union before merge for fast performance
-                : MS.struct.combinator.merge(opQueries.map(q => MS.struct.modifier.union([ q ])))
+                : MS.struct.combinator.merge(opQueries.map(q => MS.struct.modifier.union([q])))
         ]);
     }
 
@@ -656,7 +708,8 @@ export namespace Loci {
         const ranges: number[] = [];
         const set: number[] = [];
 
-        let i = 0, len = xs.length;
+        let i = 0;
+        const len = xs.length;
         while (i < len) {
             const start = i;
             i++;
@@ -676,12 +729,12 @@ export namespace Loci {
         return multimodel
             ? {
                 atom: { set, ranges },
-                chain: { opName: [ opName ] },
+                chain: { opName: [opName] },
                 entity: { modelLabel, modelIndex }
             }
             : {
                 atom: { set, ranges },
-                chain: { opName: [ opName ] },
+                chain: { opName: [opName] },
             };
     }
 }

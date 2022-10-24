@@ -179,7 +179,7 @@ namespace Transformer {
             namespace,
             id,
             definition,
-            createDefaultParams(a, globalCtx) { return definition.params ? PD.getDefaultValues( definition.params(a, globalCtx)) : {} as any; }
+            createDefaultParams(a, globalCtx) { return definition.params ? PD.getDefaultValues(definition.params(a, globalCtx)) : {} as any; }
         };
         registry.set(id, t);
         _index(t);
@@ -196,7 +196,7 @@ namespace Transformer {
     }
 
     export namespace Builder {
-        export interface Type<A extends StateObject.Ctor, B extends StateObject.Ctor, P extends { }> {
+        export interface Type<A extends StateObject.Ctor, B extends StateObject.Ctor, P extends {}> {
             name: string,
             from: A | A[],
             to: B | B[],
@@ -210,7 +210,7 @@ namespace Transformer {
             <A extends StateObject.Ctor, B extends StateObject.Ctor, P extends { }>(info: Type<A, B, P>): Define<StateObject.From<A>, StateObject.From<B>, PD.Normalize<P>>
         }
 
-        export interface Define<A extends StateObject, B extends StateObject, P> {
+        export interface Define<A extends StateObject, B extends StateObject, P extends {}> {
             (def: DefinitionBase<A, B, P>): Transformer<A, B, P>
         }
 

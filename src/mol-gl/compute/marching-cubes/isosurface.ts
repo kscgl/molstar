@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -19,6 +19,7 @@ import { quad_vert } from '../../../mol-gl/shader/quad.vert';
 import { isosurface_frag } from '../../../mol-gl/shader/marching-cubes/isosurface.frag';
 import { calcActiveVoxels } from './active-voxels';
 import { isWebGL2 } from '../../webgl/compat';
+import { isTimingMode } from '../../../mol-util/debug';
 
 const IsosurfaceSchema = {
     ...QuadSchema,
@@ -39,13 +40,15 @@ const IsosurfaceSchema = {
     uGridTransform: UniformSpec('m4'),
     uScale: UniformSpec('v2'),
 
-    dPackedGroup: DefineSpec('boolean')
+    dPackedGroup: DefineSpec('boolean'),
+    dAxisOrder: DefineSpec('string', ['012', '021', '102', '120', '201', '210']),
+    dConstantGroup: DefineSpec('boolean'),
 };
 type IsosurfaceValues = Values<typeof IsosurfaceSchema>
 
 const IsosurfaceName = 'isosurface';
 
-function getIsosurfaceRenderable(ctx: WebGLContext, activeVoxelsPyramid: Texture, activeVoxelsBase: Texture, volumeData: Texture, gridDim: Vec3, gridTexDim: Vec3, transform: Mat4, isoValue: number, levels: number, scale: Vec2, count: number, invert: boolean, packedGroup: boolean): ComputeRenderable<IsosurfaceValues> {
+function getIsosurfaceRenderable(ctx: WebGLContext, activeVoxelsPyramid: Texture, activeVoxelsBase: Texture, volumeData: Texture, gridDim: Vec3, gridTexDim: Vec3, transform: Mat4, isoValue: number, levels: number, scale: Vec2, count: number, invert: boolean, packedGroup: boolean, axisOrder: Vec3, constantGroup: boolean): ComputeRenderable<IsosurfaceValues> {
     if (ctx.namedComputeRenderables[IsosurfaceName]) {
         const v = ctx.namedComputeRenderables[IsosurfaceName].values as IsosurfaceValues;
 
@@ -64,16 +67,18 @@ function getIsosurfaceRenderable(ctx: WebGLContext, activeVoxelsPyramid: Texture
         ValueCell.update(v.uGridTransform, transform);
         ValueCell.update(v.uScale, scale);
 
-        ValueCell.update(v.dPackedGroup, packedGroup);
+        ValueCell.updateIfChanged(v.dPackedGroup, packedGroup);
+        ValueCell.updateIfChanged(v.dAxisOrder, axisOrder.join(''));
+        ValueCell.updateIfChanged(v.dConstantGroup, constantGroup);
 
         ctx.namedComputeRenderables[IsosurfaceName].update();
     } else {
-        ctx.namedComputeRenderables[IsosurfaceName] = createIsosurfaceRenderable(ctx, activeVoxelsPyramid, activeVoxelsBase, volumeData, gridDim, gridTexDim, transform, isoValue, levels, scale, count, invert, packedGroup);
+        ctx.namedComputeRenderables[IsosurfaceName] = createIsosurfaceRenderable(ctx, activeVoxelsPyramid, activeVoxelsBase, volumeData, gridDim, gridTexDim, transform, isoValue, levels, scale, count, invert, packedGroup, axisOrder, constantGroup);
     }
     return ctx.namedComputeRenderables[IsosurfaceName];
 }
 
-function createIsosurfaceRenderable(ctx: WebGLContext, activeVoxelsPyramid: Texture, activeVoxelsBase: Texture, volumeData: Texture, gridDim: Vec3, gridTexDim: Vec3, transform: Mat4, isoValue: number, levels: number, scale: Vec2, count: number, invert: boolean, packedGroup: boolean) {
+function createIsosurfaceRenderable(ctx: WebGLContext, activeVoxelsPyramid: Texture, activeVoxelsBase: Texture, volumeData: Texture, gridDim: Vec3, gridTexDim: Vec3, transform: Mat4, isoValue: number, levels: number, scale: Vec2, count: number, invert: boolean, packedGroup: boolean, axisOrder: Vec3, constantGroup: boolean) {
     // console.log('uSize', Math.pow(2, levels))
     const values: IsosurfaceValues = {
         ...QuadValues,
@@ -94,7 +99,9 @@ function createIsosurfaceRenderable(ctx: WebGLContext, activeVoxelsPyramid: Text
         uGridTransform: ValueCell.create(transform),
         uScale: ValueCell.create(scale),
 
-        dPackedGroup: ValueCell.create(packedGroup)
+        dPackedGroup: ValueCell.create(packedGroup),
+        dAxisOrder: ValueCell.create(axisOrder.join('')),
+        dConstantGroup: ValueCell.create(constantGroup),
     };
 
     const schema = { ...IsosurfaceSchema };
@@ -115,8 +122,12 @@ function setRenderingDefaults(ctx: WebGLContext) {
     state.clearColor(0, 0, 0, 0);
 }
 
-export function createIsosurfaceBuffers(ctx: WebGLContext, activeVoxelsBase: Texture, volumeData: Texture, histogramPyramid: HistogramPyramid, gridDim: Vec3, gridTexDim: Vec3, transform: Mat4, isoValue: number, invert: boolean, packedGroup: boolean, vertexTexture?: Texture, groupTexture?: Texture, normalTexture?: Texture) {
-    const { gl, resources, extensions } = ctx;
+export function createIsosurfaceBuffers(ctx: WebGLContext, activeVoxelsBase: Texture, volumeData: Texture, histogramPyramid: HistogramPyramid, gridDim: Vec3, gridTexDim: Vec3, transform: Mat4, isoValue: number, invert: boolean, packedGroup: boolean, axisOrder: Vec3, constantGroup: boolean, vertexTexture?: Texture, groupTexture?: Texture, normalTexture?: Texture) {
+    const { drawBuffers } = ctx.extensions;
+    if (!drawBuffers) throw new Error('need WebGL draw buffers');
+
+    if (isTimingMode) ctx.timer.mark('createIsosurfaceBuffers');
+    const { gl, state, resources, extensions } = ctx;
     const { pyramidTex, height, levels, scale, count } = histogramPyramid;
     const width = pyramidTex.getWidth();
 
@@ -170,11 +181,8 @@ export function createIsosurfaceBuffers(ctx: WebGLContext, activeVoxelsBase: Tex
     groupTexture.attachFramebuffer(framebuffer, 1);
     normalTexture.attachFramebuffer(framebuffer, 2);
 
-    const renderable = getIsosurfaceRenderable(ctx, pyramidTex, activeVoxelsBase, volumeData, gridDim, gridTexDim, transform, isoValue, levels, scale, count, invert, packedGroup);
+    const renderable = getIsosurfaceRenderable(ctx, pyramidTex, activeVoxelsBase, volumeData, gridDim, gridTexDim, transform, isoValue, levels, scale, count, invert, packedGroup, axisOrder, constantGroup);
     ctx.state.currentRenderItemId = -1;
-
-    const { drawBuffers } = ctx.extensions;
-    if (!drawBuffers) throw new Error('need WebGL draw buffers');
 
     framebuffer.bind();
     drawBuffers.drawBuffers([
@@ -184,11 +192,16 @@ export function createIsosurfaceBuffers(ctx: WebGLContext, activeVoxelsBase: Tex
     ]);
 
     setRenderingDefaults(ctx);
-    gl.viewport(0, 0, width, height);
+    state.viewport(0, 0, width, height);
     gl.clear(gl.COLOR_BUFFER_BIT);
     renderable.render();
 
     gl.finish();
+    if (isTimingMode) ctx.timer.markEnd('createIsosurfaceBuffers');
+
+    // printTextureImage(readTexture(ctx, vertexTexture, new Float32Array(width * height * 4)), { scale: 0.75 });
+    // printTextureImage(readTexture(ctx, groupTexture, new Uint8Array(width * height * 4)), { scale: 0.75 });
+    // printTextureImage(readTexture(ctx, normalTexture, new Float32Array(width * height * 4)), { scale: 0.75 });
 
     return { vertexTexture, groupTexture, normalTexture, vertexCount: count };
 }
@@ -204,21 +217,12 @@ export function createIsosurfaceBuffers(ctx: WebGLContext, activeVoxelsBase: Tex
  *
  * Implementation based on http://www.miaumiau.cat/2016/10/stream-compaction-in-webgl/
  */
-export function extractIsosurface(ctx: WebGLContext, volumeData: Texture, gridDim: Vec3, gridTexDim: Vec3, gridTexScale: Vec2, transform: Mat4, isoValue: number, invert: boolean, packedGroup: boolean, vertexTexture?: Texture, groupTexture?: Texture, normalTexture?: Texture) {
-    // console.time('calcActiveVoxels');
+export function extractIsosurface(ctx: WebGLContext, volumeData: Texture, gridDim: Vec3, gridTexDim: Vec3, gridTexScale: Vec2, transform: Mat4, isoValue: number, invert: boolean, packedGroup: boolean, axisOrder: Vec3, constantGroup: boolean, vertexTexture?: Texture, groupTexture?: Texture, normalTexture?: Texture) {
+    if (isTimingMode) ctx.timer.mark('extractIsosurface');
     const activeVoxelsTex = calcActiveVoxels(ctx, volumeData, gridDim, gridTexDim, isoValue, gridTexScale);
-    // ctx.waitForGpuCommandsCompleteSync();
-    // console.timeEnd('calcActiveVoxels');
-
-    // console.time('createHistogramPyramid');
     const compacted = createHistogramPyramid(ctx, activeVoxelsTex, gridTexScale, gridTexDim);
-    // ctx.waitForGpuCommandsCompleteSync();
-    // console.timeEnd('createHistogramPyramid');
-
-    // console.time('createIsosurfaceBuffers');
-    const gv = createIsosurfaceBuffers(ctx, activeVoxelsTex, volumeData, compacted, gridDim, gridTexDim, transform, isoValue, invert, packedGroup, vertexTexture, groupTexture, normalTexture);
-    // ctx.waitForGpuCommandsCompleteSync();
-    // console.timeEnd('createIsosurfaceBuffers');
+    const gv = createIsosurfaceBuffers(ctx, activeVoxelsTex, volumeData, compacted, gridDim, gridTexDim, transform, isoValue, invert, packedGroup, axisOrder, constantGroup, vertexTexture, groupTexture, normalTexture);
+    if (isTimingMode) ctx.timer.markEnd('extractIsosurface');
 
     return gv;
 }

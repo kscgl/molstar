@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017-2020 Mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2017-2022 Mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -56,16 +56,16 @@ export namespace ComponentBond {
         const entries: Map<string, Entry> = new Map();
 
         function addEntry(id: string) {
-            // weird behavior when 'PRO' is requested - will report a single bond between N and H because a later operation would override real content
-            if (entries.has(id)) {
-                return entries.get(id)!;
-            }
+            // weird behavior when 'PRO' is requested - will report a single bond
+            // between N and H because a later operation would override real content
+            if (entries.has(id)) return entries.get(id)!;
+
             const e = new Entry(id);
             entries.set(id, e);
             return e;
         }
 
-        const { comp_id, atom_id_1, atom_id_2, value_order, pdbx_aromatic_flag, _rowCount } = data;
+        const { comp_id, atom_id_1, atom_id_2, value_order, pdbx_aromatic_flag, _rowCount, pdbx_ordinal } = data;
 
         let entry = addEntry(comp_id.value(0)!);
         for (let i = 0; i < _rowCount; i++) {
@@ -73,7 +73,8 @@ export namespace ComponentBond {
             const nameA = atom_id_1.value(i)!;
             const nameB = atom_id_2.value(i)!;
             const order = value_order.value(i)!;
-            const aromatic = pdbx_aromatic_flag.value(i) === 'Y';
+            const aromatic = pdbx_aromatic_flag.value(i) === 'y';
+            const key = pdbx_ordinal.value(i);
 
             if (entry.id !== id) {
                 entry = addEntry(id);
@@ -83,37 +84,35 @@ export namespace ComponentBond {
             let ord = 1;
             if (aromatic) flags |= BondType.Flag.Aromatic;
             switch (order.toLowerCase()) {
-                case 'doub':
-                case 'delo':
-                    ord = 2;
-                    break;
+                case 'delo': flags |= BondType.Flag.Aromatic; break;
+                case 'doub': ord = 2; break;
                 case 'trip': ord = 3; break;
                 case 'quad': ord = 4; break;
             }
 
-            entry.add(nameA, nameB, ord, flags);
+            entry.add(nameA, nameB, ord, flags, key);
         }
 
         return entries;
     }
 
     export class Entry {
-        readonly map: Map<string, Map<string, { order: number, flags: number }>> = new Map();
+        readonly map: Map<string, Map<string, { order: number, flags: number, key: number }>> = new Map();
 
-        add(a: string, b: string, order: number, flags: number, swap = true) {
-            let e = this.map.get(a);
+        add(a: string, b: string, order: number, flags: number, key: number, swap = true) {
+            const e = this.map.get(a);
             if (e !== void 0) {
-                let f = e.get(b);
+                const f = e.get(b);
                 if (f === void 0) {
-                    e.set(b, { order, flags });
+                    e.set(b, { order, flags, key });
                 }
             } else {
-                let map = new Map<string, { order: number, flags: number }>();
-                map.set(b, { order, flags });
+                const map = new Map<string, { order: number, flags: number, key: number }>();
+                map.set(b, { order, flags, key });
                 this.map.set(a, map);
             }
 
-            if (swap) this.add(b, a, order, flags, false);
+            if (swap) this.add(b, a, order, flags, key, false);
         }
 
         constructor(public readonly id: string) { }

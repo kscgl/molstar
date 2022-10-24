@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -15,12 +15,15 @@ import { VisualContext } from '../../../mol-repr/visual';
 import { Theme } from '../../../mol-theme/theme';
 import { InteractionsProvider } from '../interactions';
 import { createLinkCylinderMesh, LinkCylinderParams, LinkStyle } from '../../../mol-repr/structure/visual/util/link';
-import { UnitsMeshParams, UnitsVisual, UnitsMeshVisual, StructureGroup } from '../../../mol-repr/structure/units-visual';
+import { UnitsMeshParams, UnitsVisual, UnitsMeshVisual } from '../../../mol-repr/structure/units-visual';
 import { VisualUpdateState } from '../../../mol-repr/util';
 import { LocationIterator } from '../../../mol-geo/util/location-iterator';
 import { Interactions } from '../interactions/interactions';
 import { InteractionFlag } from '../interactions/common';
 import { Sphere3D } from '../../../mol-math/geometry';
+import { StructureGroup } from '../../../mol-repr/structure/visual/util/common';
+import { assertUnreachable } from '../../../mol-util/type-helpers';
+import { InteractionsSharedParams } from './shared';
 
 async function createIntraUnitInteractionsCylinderMesh(ctx: VisualContext, unit: Unit, structure: Structure, theme: Theme, props: PD.Values<InteractionsIntraUnitParams>, mesh?: Mesh) {
     if (!Unit.isAtomic(unit)) return Mesh.createEmpty(mesh);
@@ -37,7 +40,7 @@ async function createIntraUnitInteractionsCylinderMesh(ctx: VisualContext, unit:
 
     const { x, y, z, members, offsets } = features;
     const { edgeCount, a, b, edgeProps: { flag } } = contacts;
-    const { sizeFactor } = props;
+    const { sizeFactor, parentDisplay } = props;
 
     if (!edgeCount) return Mesh.createEmpty(mesh);
 
@@ -55,17 +58,50 @@ async function createIntraUnitInteractionsCylinderMesh(ctx: VisualContext, unit:
             const sizeB = theme.size.size(location);
             return Math.min(sizeA, sizeB) * sizeFactor;
         },
-        ignore: (edgeIndex: number) => (
-            flag[edgeIndex] === InteractionFlag.Filtered ||
-            // TODO: check all members
-            (!!childUnit && !SortedArray.has(childUnit.elements, unit.elements[members[offsets[a[edgeIndex]]]]))
-        )
+        ignore: (edgeIndex: number) => {
+            if (flag[edgeIndex] === InteractionFlag.Filtered) return true;
+
+            if (childUnit) {
+                if (parentDisplay === 'stub') {
+                    const f = a[edgeIndex];
+                    for (let i = offsets[f], il = offsets[f + 1]; i < il; ++i) {
+                        const e = unit.elements[members[offsets[i]]];
+                        if (!SortedArray.has(childUnit.elements, e)) return true;
+                    }
+                } else if (parentDisplay === 'full' || parentDisplay === 'between') {
+                    let flagA = false;
+                    let flagB = false;
+
+                    const fA = a[edgeIndex];
+                    for (let i = offsets[fA], il = offsets[fA + 1]; i < il; ++i) {
+                        const eA = unit.elements[members[offsets[i]]];
+                        if (!SortedArray.has(childUnit.elements, eA)) flagA = true;
+                    }
+
+                    const fB = b[edgeIndex];
+                    for (let i = offsets[fB], il = offsets[fB + 1]; i < il; ++i) {
+                        const eB = unit.elements[members[offsets[i]]];
+                        if (!SortedArray.has(childUnit.elements, eB)) flagB = true;
+                    }
+
+                    return parentDisplay === 'full' ? flagA && flagB : flagA === flagB;
+                } else {
+                    assertUnreachable(parentDisplay);
+                }
+            }
+
+            return false;
+        }
     };
 
-    const m = createLinkCylinderMesh(ctx, builderProps, props, mesh);
+    const { mesh: m, boundingSphere } = createLinkCylinderMesh(ctx, builderProps, props, mesh);
 
-    const sphere = Sphere3D.expand(Sphere3D(), (childUnit ?? unit).boundary.sphere, 1 * sizeFactor);
-    m.setBoundingSphere(sphere);
+    if (boundingSphere) {
+        m.setBoundingSphere(boundingSphere);
+    } else if (m.triangleCount > 0) {
+        const sphere = Sphere3D.expand(Sphere3D(), (childUnit ?? unit).boundary.sphere, 1 * sizeFactor);
+        m.setBoundingSphere(sphere);
+    }
 
     return m;
 }
@@ -73,10 +109,7 @@ async function createIntraUnitInteractionsCylinderMesh(ctx: VisualContext, unit:
 export const InteractionsIntraUnitParams = {
     ...UnitsMeshParams,
     ...LinkCylinderParams,
-    sizeFactor: PD.Numeric(0.3, { min: 0, max: 10, step: 0.01 }),
-    dashCount: PD.Numeric(6, { min: 2, max: 10, step: 2 }),
-    dashScale: PD.Numeric(0.4, { min: 0, max: 2, step: 0.1 }),
-    includeParent: PD.Boolean(false),
+    ...InteractionsSharedParams,
 };
 export type InteractionsIntraUnitParams = typeof InteractionsIntraUnitParams
 
@@ -93,7 +126,8 @@ export function InteractionsIntraUnitVisual(materialId: number): UnitsVisual<Int
                 newProps.dashCount !== currentProps.dashCount ||
                 newProps.dashScale !== currentProps.dashScale ||
                 newProps.dashCap !== currentProps.dashCap ||
-                newProps.radialSegments !== currentProps.radialSegments
+                newProps.radialSegments !== currentProps.radialSegments ||
+                newProps.parentDisplay !== currentProps.parentDisplay
             );
 
             const interactionsHash = InteractionsProvider.get(newStructureGroup.structure).version;
@@ -121,6 +155,8 @@ function getInteractionLoci(pickingId: PickingId, structureGroup: StructureGroup
     }
     return EmptyLoci;
 }
+
+const __contactIndicesSet = new Set<number>();
 
 function eachInteraction(loci: Loci, structureGroup: StructureGroup, apply: (interval: Interval) => boolean, isMarking: boolean) {
     let changed = false;
@@ -155,21 +191,37 @@ function eachInteraction(loci: Loci, structureGroup: StructureGroup, apply: (int
 
         const { offset } = contacts;
         const { offsets: fOffsets, indices: fIndices } = features.elementsIndex;
+        const { members, offsets } = features;
 
-        // TODO: when isMarking, all elements of contact features need to be in the loci
         for (const e of loci.elements) {
             const unitIdx = group.unitIndexMap.get(e.unit.id);
-            if (unitIdx !== undefined) continue;
-            if (isMarking && OrderedSet.size(e.indices) === 1) continue;
+            if (unitIdx === undefined) continue;
 
             OrderedSet.forEach(e.indices, v => {
                 for (let i = fOffsets[v], il = fOffsets[v + 1]; i < il; ++i) {
                     const fI = fIndices[i];
                     for (let j = offset[fI], jl = offset[fI + 1]; j < jl; ++j) {
-                        if (apply(Interval.ofSingleton(unitIdx * groupCount + j))) changed = true;
+                        __contactIndicesSet.add(j);
                     }
                 }
             });
+
+            __contactIndicesSet.forEach(i => {
+                if (isMarking) {
+                    const fA = contacts.a[i];
+                    for (let j = offsets[fA], jl = offsets[fA + 1]; j < jl; ++j) {
+                        if (!OrderedSet.has(e.indices, members[j])) return;
+                    }
+                    const fB = contacts.b[i];
+                    for (let j = offsets[fB], jl = offsets[fB + 1]; j < jl; ++j) {
+                        if (!OrderedSet.has(e.indices, members[j])) return;
+                    }
+                }
+
+                if (apply(Interval.ofSingleton(unitIdx * groupCount + i))) changed = true;
+            });
+
+            __contactIndicesSet.clear();
         }
     }
     return changed;

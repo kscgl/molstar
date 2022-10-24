@@ -17,15 +17,17 @@ function isRetriableNetworkError(error: any) {
 }
 
 export async function fetchRetry(url: string, timeout: number, retryCount: number, onRetry?: () => void): Promise<Response> {
-    const result = await retryIf(() => fetch(url, { timeout }), {
-        retryThenIf: r => r.status === 408 /** timeout */ || r.status === 429 /** too mant requests */ || (r.status >= 500 && r.status < 600),
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    const signal = controller.signal as any; // TODO: fix type
+    const result = await retryIf(() => fetch(url, { signal }), {
+        retryThenIf: r => r.status === 408 /** timeout */ || r.status === 429 /** too many requests */ || (r.status >= 500 && r.status < 600),
         // TODO test retryCatchIf
         retryCatchIf: e => isRetriableNetworkError(e),
         onRetry,
         retryCount
     });
+    clearTimeout(id);
 
     return result;
-    // if (result.status >= 200 && result.status < 300) return result;
-    // throw new Error(result.statusText);
 }

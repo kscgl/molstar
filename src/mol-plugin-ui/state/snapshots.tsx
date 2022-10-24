@@ -45,12 +45,12 @@ export class StateExportImportControls extends PluginUIComponent<{ onAction?: ()
     downloadToFileJson = () => {
         this.props.onAction?.();
         PluginCommands.State.Snapshots.DownloadToFile(this.plugin, { type: 'json' });
-    }
+    };
 
     downloadToFileZip = () => {
         this.props.onAction?.();
         PluginCommands.State.Snapshots.DownloadToFile(this.plugin, { type: 'zip' });
-    }
+    };
 
     open = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || !e.target.files[0]) {
@@ -60,7 +60,7 @@ export class StateExportImportControls extends PluginUIComponent<{ onAction?: ()
 
         this.props.onAction?.();
         PluginCommands.State.Snapshots.OpenFile(this.plugin, { file: e.target.files[0] });
-    }
+    };
 
     render() {
         return <>
@@ -75,7 +75,7 @@ export class StateExportImportControls extends PluginUIComponent<{ onAction?: ()
                     <Icon svg={OpenInBrowserSvg} inline /> Open <input onChange={this.open} type='file' multiple={false} accept='.molx,.molj' />
                 </div>
             </div>
-            <div className='msp-help-text' style={{ padding: '10px'}}>
+            <div className='msp-help-text' style={{ padding: '10px' }}>
                 <Icon svg={WarningSvg} /> This is an experimental feature and stored states/sessions might not be openable in a future version.
             </div>
         </>;
@@ -107,13 +107,13 @@ export class LocalStateSnapshots extends PluginUIComponent<
             name: this.state.params.name,
             description: this.state.params.description
         });
-    }
+    };
 
     updateParams = (params: PD.Values<typeof LocalStateSnapshots.Params>) => this.setState({ params });
 
     clear = () => {
         PluginCommands.State.Snapshots.Clear(this.plugin, {});
-    }
+    };
 
     shouldComponentUpdate(nextProps: any, nextState: any) {
         return !shallowEqualObjects(this.props, nextProps) || !shallowEqualObjects(this.state, nextState);
@@ -139,31 +139,31 @@ export class LocalStateSnapshotList extends PluginUIComponent<{}, {}> {
         const id = e.currentTarget.getAttribute('data-id');
         if (!id) return;
         PluginCommands.State.Snapshots.Apply(this.plugin, { id });
-    }
+    };
 
     remove = (e: React.MouseEvent<HTMLElement>) => {
         const id = e.currentTarget.getAttribute('data-id');
         if (!id) return;
         PluginCommands.State.Snapshots.Remove(this.plugin, { id });
-    }
+    };
 
     moveUp = (e: React.MouseEvent<HTMLElement>) => {
         const id = e.currentTarget.getAttribute('data-id');
         if (!id) return;
         PluginCommands.State.Snapshots.Move(this.plugin, { id, dir: -1 });
-    }
+    };
 
     moveDown = (e: React.MouseEvent<HTMLElement>) => {
         const id = e.currentTarget.getAttribute('data-id');
         if (!id) return;
         PluginCommands.State.Snapshots.Move(this.plugin, { id, dir: 1 });
-    }
+    };
 
     replace = (e: React.MouseEvent<HTMLElement>) => {
         const id = e.currentTarget.getAttribute('data-id');
         if (!id) return;
         PluginCommands.State.Snapshots.Replace(this.plugin, { id });
-    }
+    };
 
     render() {
         const current = this.plugin.managers.snapshot.state.current;
@@ -215,6 +215,7 @@ export class RemoteStateSnapshots extends PluginUIComponent<
     }
 
     componentWillUnmount() {
+        super.componentWillUnmount();
         this._mounted = false;
     }
 
@@ -246,10 +247,11 @@ export class RemoteStateSnapshots extends PluginUIComponent<
 
             if (this._mounted) this.setState({ entries: entries.asImmutable(), isBusy: false });
         } catch (e) {
-            this.plugin.log.error('Fetching Remote Snapshots: ' + e);
+            console.error(e);
+            this.plugin.log.error('Error fetching remote snapshots');
             if (this._mounted) this.setState({ entries: OrderedMap(), isBusy: false });
         }
-    }
+    };
 
     upload = async () => {
         this.setState({ isBusy: true });
@@ -268,7 +270,7 @@ export class RemoteStateSnapshots extends PluginUIComponent<
             this.setState({ isBusy: false });
             this.refresh();
         }
-    }
+    };
 
 
     fetch = async (e: React.MouseEvent<HTMLElement>) => {
@@ -283,7 +285,7 @@ export class RemoteStateSnapshots extends PluginUIComponent<
         } finally {
             if (this._mounted) this.setState({ isBusy: false });
         }
-    }
+    };
 
     remove = async (e: React.MouseEvent<HTMLElement>) => {
         const id = e.currentTarget.getAttribute('data-id');
@@ -294,8 +296,10 @@ export class RemoteStateSnapshots extends PluginUIComponent<
 
         try {
             await fetch(entry.removeUrl);
-        } catch { }
-    }
+        } catch (e) {
+            console.error(e);
+        }
+    };
 
     render() {
         return <>
@@ -337,11 +341,12 @@ class RemoteStateSnapshotList extends PurePluginUIComponent<
         if (!entry) return;
 
         e.preventDefault();
-        let url = `${window.location}`, qi = url.indexOf('?');
+        let url = `${window.location}`;
+        const qi = url.indexOf('?');
         if (qi > 0) url = url.substr(0, qi);
 
         window.open(`${url}?snapshot-url=${encodeURIComponent(entry.url)}`, '_blank');
-    }
+    };
 
     render() {
         return <ul style={{ listStyle: 'none', marginTop: '10px' }} className='msp-state-list'>

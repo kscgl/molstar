@@ -20,7 +20,7 @@ export const ValenceModel = PluginBehavior.create<{ autoAttach: boolean, showToo
     category: 'custom-props',
     display: { name: 'Valence Model' },
     ctor: class extends PluginBehavior.Handler<{ autoAttach: boolean, showTooltip: boolean }> {
-        private provider = ValenceModelProvider
+        private provider = ValenceModelProvider;
 
         private getStructures(structure: Structure) {
             const structures: Structure[] = [];
@@ -73,10 +73,10 @@ export const ValenceModel = PluginBehavior.create<{ autoAttach: boolean, showToo
                     default: return void 0;
                 }
             }
-        }
+        };
 
         update(p: { autoAttach: boolean, showTooltip: boolean }) {
-            let updated = (
+            const updated = (
                 this.params.autoAttach !== p.autoAttach ||
                 this.params.showTooltip !== p.showTooltip
             );

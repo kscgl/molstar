@@ -1,7 +1,8 @@
 /**
- * Copyright (c) 2019 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
+ * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
 
 import * as React from 'react';
@@ -18,6 +19,20 @@ import { RemoteStateSnapshots, StateSnapshots } from './state/snapshots';
 import { StateTree } from './state/tree';
 import { HelpContent } from './viewport/help';
 import { HomeOutlinedSvg, AccountTreeOutlinedSvg, TuneSvg, HelpOutlineSvg, SaveOutlinedSvg, DeleteOutlinedSvg } from './controls/icons';
+
+export class CustomImportControls extends PluginUIComponent<{ initiallyCollapsed?: boolean }> {
+    componentDidMount() {
+        this.subscribe(this.plugin.state.behaviors.events.changed, () => this.forceUpdate());
+    }
+
+    render() {
+        const controls: JSX.Element[] = [];
+        this.plugin.customImportControls.forEach((Controls, key) => {
+            controls.push(<Controls initiallyCollapsed={this.props.initiallyCollapsed} key={key} />);
+        });
+        return controls.length > 0 ? <>{controls}</> : null;
+    }
+}
 
 export class LeftPanelControls extends PluginUIComponent<{}, { tab: LeftPanelTabName }> {
     state = { tab: this.plugin.behaviors.layout.leftPanelTabName.value };
@@ -47,13 +62,14 @@ export class LeftPanelControls extends PluginUIComponent<{}, { tab: LeftPanelTab
         if (this.plugin.layout.state.regionState.left !== 'full') {
             PluginCommands.Layout.Update(this.plugin, { state: { regionState: { ...this.plugin.layout.state.regionState, left: 'full' } } });
         }
-    }
+    };
 
     tabs: { [K in LeftPanelTabName]: JSX.Element } = {
         'none': <></>,
         'root': <>
             <SectionHeader icon={HomeOutlinedSvg} title='Home' />
             <StateObjectActions state={this.plugin.state.data} nodeRef={StateTransform.RootRef} hideHeader={true} initiallyCollapsed={true} alwaysExpandFirst={true} />
+            <CustomImportControls />
             {this.plugin.spec.components?.remoteState !== 'none' && <RemoteStateSnapshots listOnly /> }
         </>,
         'data': <>
@@ -69,7 +85,7 @@ export class LeftPanelControls extends PluginUIComponent<{}, { tab: LeftPanelTab
             <SectionHeader icon={HelpOutlineSvg} title='Help' />
             <HelpContent />
         </>
-    }
+    };
 
     render() {
         const tab = this.state.tab;
@@ -119,17 +135,19 @@ class DataIcon extends PluginUIComponent<{ set: (tab: LeftPanelTabName) => void 
 class FullSettings extends PluginUIComponent {
     private setSettings = (p: { param: PD.Base<any>, name: string, value: any }) => {
         PluginCommands.Canvas3D.SetSettings(this.plugin, { settings: { [p.name]: p.value } });
-    }
+    };
 
     componentDidMount() {
         this.subscribe(this.plugin.events.canvas3d.settingsUpdated, () => this.forceUpdate());
         this.subscribe(this.plugin.layout.events.updated, () => this.forceUpdate());
 
-        this.subscribe(this.plugin.canvas3d!.camera.stateChanged, state => {
-            if (state.radiusMax !== undefined || state.radius !== undefined) {
-                this.forceUpdate();
-            }
-        });
+        if (this.plugin.canvas3d) {
+            this.subscribe(this.plugin.canvas3d.camera.stateChanged, state => {
+                if (state.radiusMax !== undefined || state.radius !== undefined) {
+                    this.forceUpdate();
+                }
+            });
+        }
     }
 
     render() {
@@ -158,7 +176,7 @@ class RemoveAllButton extends PluginUIComponent<{ }> {
     remove = (e: React.MouseEvent<HTMLElement>) => {
         e.preventDefault();
         PluginCommands.State.RemoveObject(this.plugin, { state: this.plugin.state.data, ref: StateTransform.RootRef });
-    }
+    };
 
     render() {
         const count = this.plugin.state.data.tree.children.get(StateTransform.RootRef).size;

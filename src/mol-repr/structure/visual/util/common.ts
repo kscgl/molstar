@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -9,13 +9,13 @@ import { Mat4, Vec3 } from '../../../../mol-math/linear-algebra';
 import { TransformData, createTransform } from '../../../../mol-geo/geometry/transform-data';
 import { OrderedSet, SortedArray } from '../../../../mol-data/int';
 import { EmptyLoci, Loci } from '../../../../mol-model/loci';
-import { PhysicalSizeTheme } from '../../../../mol-theme/size/physical';
 import { AtomicNumbers } from '../../../../mol-model/structure/model/properties/atomic';
 import { fillSerial } from '../../../../mol-util/array';
 import { ParamDefinition as PD } from '../../../../mol-util/param-definition';
 import { AssignableArrayLike } from '../../../../mol-util/type-helpers';
 import { getBoundary } from '../../../../mol-math/geometry/boundary';
 import { Box3D } from '../../../../mol-math/geometry';
+import { SizeTheme } from '../../../../mol-theme/size';
 
 /** Return a Loci for the elements of a whole residue the elementIndex belongs to. */
 export function getResidueLoci(structure: Structure, unit: Unit.Atomic, elementIndex: ElementIndex): Loci {
@@ -71,7 +71,13 @@ export function getAltResidueLociFromId(structure: Structure, unit: Unit.Atomic,
 
 //
 
-export function createUnitsTransform({ units }: Unit.SymmetryGroup, transformData?: TransformData) {
+export type StructureGroup = { structure: Structure, group: Unit.SymmetryGroup }
+
+export function createUnitsTransform(structureGroup: StructureGroup, includeParent: boolean, transformData?: TransformData) {
+    const { child } = structureGroup.structure;
+    const units: ReadonlyArray<Unit> = includeParent && child
+        ? structureGroup.group.units.filter(u => child.unitMap.has(u.id))
+        : structureGroup.group.units;
     const unitCount = units.length;
     const n = unitCount * 16;
     const array = transformData && transformData.aTransform.ref.value.length >= n ? transformData.aTransform.ref.value : new Float32Array(n);
@@ -159,7 +165,7 @@ function filterId(id: AssignableArrayLike<number>, elements: SortedArray, indice
     }
 }
 
-export function getUnitConformationAndRadius(structure: Structure, unit: Unit, props: CommonSurfaceProps) {
+export function getUnitConformationAndRadius(structure: Structure, unit: Unit, sizeTheme: SizeTheme<any>, props: CommonSurfaceProps) {
     const { ignoreHydrogens, traceOnly, includeParent } = props;
     const rootUnit = includeParent ? structure.root.unitMap.get(unit.id) : unit;
 
@@ -199,7 +205,6 @@ export function getUnitConformationAndRadius(structure: Structure, unit: Unit, p
     const boundary = unit === rootUnit ? unit.boundary : getBoundary(position);
 
     const l = StructureElement.Location.create(structure, rootUnit);
-    const sizeTheme = PhysicalSizeTheme({}, { scale: 1 });
     const radius = (index: number) => {
         l.element = index as ElementIndex;
         return sizeTheme.size(l);
@@ -208,9 +213,8 @@ export function getUnitConformationAndRadius(structure: Structure, unit: Unit, p
     return { position, boundary, radius };
 }
 
-export function getStructureConformationAndRadius(structure: Structure, ignoreHydrogens: boolean, traceOnly: boolean) {
+export function getStructureConformationAndRadius(structure: Structure, sizeTheme: SizeTheme<any>, ignoreHydrogens: boolean, traceOnly: boolean) {
     const l = StructureElement.Location.create(structure);
-    const sizeTheme = PhysicalSizeTheme({}, { scale: 1 });
 
     let xs: ArrayLike<number>;
     let ys: ArrayLike<number>;
@@ -293,26 +297,4 @@ export function isTrace(unit: Unit, element: ElementIndex) {
     const atomId = unit.model.atomicHierarchy.atoms.label_atom_id.value(element);
     if (atomId === 'CA' || atomId === 'BB' || atomId === 'P') return true;
     return false;
-}
-
-export function getUnitExtraRadius(unit: Unit) {
-    if (Unit.isAtomic(unit)) return 4;
-
-    let max = 0;
-    const { elements } = unit;
-    const { r } = unit.conformation;
-    for (let i = 0, _i = elements.length; i < _i; i++) {
-        const _r = r(elements[i]);
-        if (_r > max) max = _r;
-    }
-    return max + 1;
-}
-
-export function getStructureExtraRadius(structure: Structure) {
-    let max = 0;
-    for (const ug of structure.unitSymmetryGroups) {
-        const r = getUnitExtraRadius(ug.units[0]);
-        if (r > max) max = r;
-    }
-    return max;
 }

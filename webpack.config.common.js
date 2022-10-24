@@ -1,8 +1,17 @@
 const path = require('path');
+const fs = require('fs');
 const webpack = require('webpack');
 const ExtraWatchWebpackPlugin = require('extra-watch-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
-const VersionFile = require('webpack-version-file-plugin');
+const VERSION = require('./package.json').version;
+
+class VersionFilePlugin {
+    apply() {
+        fs.writeFileSync(
+            path.resolve(__dirname, 'lib/mol-plugin/version.js'),
+            `export var PLUGIN_VERSION = '${VERSION}';\nexport var PLUGIN_VERSION_DATE = new Date(typeof __MOLSTAR_DEBUG_TIMESTAMP__ !== 'undefined' ? __MOLSTAR_DEBUG_TIMESTAMP__ : ${new Date().valueOf()});`);
+    }
+}
 const publicPath = '/';
 const bvbrcWebsitePath = '/Users/mkuscuog/IdeaProjects/bvbrc_website/public/js/molstar';
 
@@ -27,7 +36,11 @@ const sharedConfig = {
                     { loader: 'css-loader', options: { sourceMap: false } },
                     { loader: 'sass-loader', options: { sourceMap: false } },
                 ]
-            }
+            },
+            {
+                test: /\.(jpg)$/i,
+                type: 'asset/resource',
+            },
         ]
     },
     plugins: [
@@ -41,13 +54,8 @@ const sharedConfig = {
             'process.env.DEBUG': JSON.stringify(process.env.DEBUG),
             '__MOLSTAR_DEBUG_TIMESTAMP__': webpack.DefinePlugin.runtimeValue(() => `${new Date().valueOf()}`, true)
         }),
-        new MiniCssExtractPlugin({ filename: 'molstar.css',  }),
-        new VersionFile({
-            extras: { timestamp: `${new Date().valueOf()}` },
-            packageFile: path.resolve(__dirname, 'package.json'),
-            templateString: `export var PLUGIN_VERSION = '<%= package.version %>';\nexport var PLUGIN_VERSION_DATE = new Date(typeof __MOLSTAR_DEBUG_TIMESTAMP__ !== 'undefined' ? __MOLSTAR_DEBUG_TIMESTAMP__ : <%= extras.timestamp %>);`,
-            outputFile: path.resolve(__dirname, 'lib/mol-plugin/version.js')
-        })
+        new MiniCssExtractPlugin({ filename: 'molstar.css' }),
+        new VersionFilePlugin(),
     ],
     resolve: {
         modules: [
@@ -87,7 +95,7 @@ function createBVBRCEntry(src, outFolder, outFilename, isNode) {
 function createEntryPoint(name, dir, out, library) {
     return {
         entry: path.resolve(__dirname, `lib/${dir}/${name}.js`),
-        output: { filename: `${library || name}.js`, path: path.resolve(__dirname, `build/${out}`), library: library || out, libraryTarget: 'umd', publicPath: publicPath },
+        output: { filename: `${library || name}.js`, path: path.resolve(__dirname, `build/${out}`), library: library || out, libraryTarget: 'umd' },
         ...sharedConfig
     };
 }
@@ -96,7 +104,7 @@ function createNodeEntryPoint(name, dir, out) {
     return {
         target: 'node',
         entry: path.resolve(__dirname, `lib/${dir}/${name}.js`),
-        output: { filename: `${name}.js`, path: path.resolve(__dirname, `build/${out}`), publicPath: publicPath},
+        output: { filename: `${name}.js`, path: path.resolve(__dirname, `build/${out}`), publicPath: publicPath },
         externals: {
             argparse: 'require("argparse")',
             'node-fetch': 'require("node-fetch")',

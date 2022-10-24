@@ -21,7 +21,7 @@ import { transformPositionArray } from '../../mol-geo/util';
 import { RenderableState } from '../../mol-gl/renderable';
 import { Color } from '../../mol-util/color';
 import { ColorTheme } from '../../mol-theme/color';
-import { encodeFloatRGBtoArray } from '../../mol-util/float-packing';
+import { packIntToRGBArray } from '../../mol-util/number-packing';
 import { eachVolumeLoci } from './util';
 
 export async function createImage(ctx: VisualContext, volume: Volume, theme: Theme, props: PD.Values<SliceParams>, image?: Image) {
@@ -32,7 +32,7 @@ export async function createImage(ctx: VisualContext, volume: Volume, theme: The
     const isoVal = Volume.IsoValue.toAbsolute(isoValue, volume.grid.stats).absoluteValue;
 
     // TODO more color themes
-    const color = theme.color.color(NullLocation, false);
+    const color = 'color' in theme.color ? theme.color.color(NullLocation, false) : Color(0xffffff);
     const [r, g, b] = Color.toRgbNormalized(color);
 
     const {
@@ -43,9 +43,9 @@ export async function createImage(ctx: VisualContext, volume: Volume, theme: The
     } = getSliceInfo(volume.grid, props);
 
     const corners = new Float32Array(
-        dim === 'x' ? [x, 0, 0,  x, y, 0,  x, 0, z,  x, y, z] :
-            dim === 'y' ? [0, y, 0,  x, y, 0,  0, y, z,  x, y, z] :
-                [0, 0, z,  0, y, z,  x, 0, z,  x, y, z]
+        dim === 'x' ? [x, 0, 0, x, y, 0, x, 0, z, x, y, z] :
+            dim === 'y' ? [0, y, 0, x, y, 0, 0, y, z, x, y, z] :
+                [0, 0, z, 0, y, z, x, 0, z, x, y, z]
     );
 
     const imageArray = new Uint8Array(width * height * 4);
@@ -116,7 +116,7 @@ function getPackedGroupArray(grid: Grid, props: PD.Values<SliceParams>) {
     for (let iy = y0; iy < ny; ++iy) {
         for (let ix = x0; ix < nx; ++ix) {
             for (let iz = z0; iz < nz; ++iz) {
-                encodeFloatRGBtoArray(space.dataOffset(ix, iy, iz), groupArray, j);
+                packIntToRGBArray(space.dataOffset(ix, iy, iz), groupArray, j);
                 j += 4;
             }
         }
@@ -150,7 +150,14 @@ function getLoci(volume: Volume, props: PD.Values<SliceParams>) {
 function getSliceLoci(pickingId: PickingId, volume: Volume, props: PD.Values<SliceParams>, id: number) {
     const { objectId, groupId } = pickingId;
     if (id === objectId) {
-        return Volume.Cell.Loci(volume, Interval.ofSingleton(groupId as Volume.CellIndex));
+        const granularity = Volume.PickingGranularity.get(volume);
+        if (granularity === 'volume') {
+            return Volume.Loci(volume);
+        } if (granularity === 'object') {
+            return getLoci(volume, props);
+        } else {
+            return Volume.Cell.Loci(volume, Interval.ofSingleton(groupId as Volume.CellIndex));
+        }
     }
     return EmptyLoci;
 }

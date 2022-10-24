@@ -63,14 +63,14 @@ interface RootState {
 export class PluginLayout extends StatefulPluginComponent<PluginLayoutStateProps> {
     readonly events = {
         updated: this.ev()
-    }
+    };
 
     private updateProps(state: Partial<PluginLayoutStateProps>) {
         const prevExpanded = !!this.state.isExpanded;
         this.updateState(state);
         if (this.root && typeof state.isExpanded === 'boolean' && state.isExpanded !== prevExpanded) this.handleExpand();
 
-        this.events.updated.next();
+        this.events.updated.next(void 0);
     }
 
     root: HTMLElement | undefined;
@@ -111,7 +111,7 @@ export class PluginLayout extends StatefulPluginComponent<PluginLayoutStateProps
                     }
                 }
 
-                for (let v of viewports) {
+                for (const v of viewports) {
                     head.removeChild(v);
                 }
 
@@ -161,7 +161,7 @@ export class PluginLayout extends StatefulPluginComponent<PluginLayoutStateProps
 
                 if (this.rootState) {
                     const t = this.rootState;
-                    for (let v of t.viewports) {
+                    for (const v of t.viewports) {
                         head.appendChild(v);
                     }
 

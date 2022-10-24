@@ -1,11 +1,11 @@
 /**
- * Copyright (c) 2019-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  * @author Áron Samuel Kovács <aron.kovacs@mail.muni.cz>
  */
 
-import { QuadSchema, QuadValues } from '../../mol-gl/compute/util';
+import { CopyRenderable, createCopyRenderable, QuadSchema, QuadValues } from '../../mol-gl/compute/util';
 import { TextureSpec, Values, UniformSpec, DefineSpec } from '../../mol-gl/renderable/schema';
 import { ShaderCode } from '../../mol-gl/shader-code';
 import { WebGLContext } from '../../mol-gl/webgl/context';
@@ -27,10 +27,14 @@ import { Framebuffer } from '../../mol-gl/webgl/framebuffer';
 import { Color } from '../../mol-util/color';
 import { FxaaParams, FxaaPass } from './fxaa';
 import { SmaaParams, SmaaPass } from './smaa';
+import { isTimingMode } from '../../mol-util/debug';
+import { BackgroundParams, BackgroundPass } from './background';
+import { AssetManager } from '../../mol-util/assets';
 
 const OutlinesSchema = {
     ...QuadSchema,
-    tDepth: TextureSpec('texture', 'rgba', 'ubyte', 'nearest'),
+    tDepthOpaque: TextureSpec('texture', 'rgba', 'ubyte', 'nearest'),
+    tDepthTransparent: TextureSpec('texture', 'rgba', 'ubyte', 'nearest'),
     uTexSize: UniformSpec('v2'),
 
     dOrthographic: DefineSpec('number'),
@@ -41,11 +45,15 @@ const OutlinesSchema = {
 };
 type OutlinesRenderable = ComputeRenderable<Values<typeof OutlinesSchema>>
 
-function getOutlinesRenderable(ctx: WebGLContext, depthTexture: Texture): OutlinesRenderable {
+function getOutlinesRenderable(ctx: WebGLContext, depthTextureOpaque: Texture, depthTextureTransparent: Texture): OutlinesRenderable {
+    const width = depthTextureOpaque.getWidth();
+    const height = depthTextureOpaque.getHeight();
+
     const values: Values<typeof OutlinesSchema> = {
         ...QuadValues,
-        tDepth: ValueCell.create(depthTexture),
-        uTexSize: ValueCell.create(Vec2.create(depthTexture.getWidth(), depthTexture.getHeight())),
+        tDepthOpaque: ValueCell.create(depthTextureOpaque),
+        tDepthTransparent: ValueCell.create(depthTextureTransparent),
+        uTexSize: ValueCell.create(Vec2.create(width, height)),
 
         dOrthographic: ValueCell.create(0),
         uNear: ValueCell.create(1),
@@ -85,8 +93,8 @@ function getSsaoRenderable(ctx: WebGLContext, depthTexture: Texture): SsaoRender
         ...QuadValues,
         tDepth: ValueCell.create(depthTexture),
 
-        uSamples: ValueCell.create([0.0, 0.0, 1.0]),
-        dNSamples: ValueCell.create(1),
+        uSamples: ValueCell.create(getSamples(32)),
+        dNSamples: ValueCell.create(32),
 
         uProjection: ValueCell.create(Mat4.identity()),
         uInvProjection: ValueCell.create(Mat4.identity()),
@@ -132,8 +140,8 @@ function getSsaoBlurRenderable(ctx: WebGLContext, ssaoDepthTexture: Texture, dir
         tSsaoDepth: ValueCell.create(ssaoDepthTexture),
         uTexSize: ValueCell.create(Vec2.create(ssaoDepthTexture.getWidth(), ssaoDepthTexture.getHeight())),
 
-        uKernel: ValueCell.create([0.0]),
-        dOcclusionKernelSize: ValueCell.create(1),
+        uKernel: ValueCell.create(getBlurKernel(15)),
+        dOcclusionKernelSize: ValueCell.create(15),
 
         uBlurDirectionX: ValueCell.create(direction === 'horizontal' ? 1 : 0),
         uBlurDirectionY: ValueCell.create(direction === 'vertical' ? 1 : 0),
@@ -154,10 +162,10 @@ function getSsaoBlurRenderable(ctx: WebGLContext, ssaoDepthTexture: Texture, dir
 }
 
 function getBlurKernel(kernelSize: number): number[] {
-    let sigma = kernelSize / 3.0;
-    let halfKernelSize = Math.floor((kernelSize + 1) / 2);
+    const sigma = kernelSize / 3.0;
+    const halfKernelSize = Math.floor((kernelSize + 1) / 2);
 
-    let kernel = [];
+    const kernel = [];
     for (let x = 0; x < halfKernelSize; x++) {
         kernel.push((1.0 / ((Math.sqrt(2 * Math.PI)) * sigma)) * Math.exp(-x * x / (2 * sigma * sigma)));
     }
@@ -165,15 +173,26 @@ function getBlurKernel(kernelSize: number): number[] {
     return kernel;
 }
 
-function getSamples(vectorSamples: Vec3[], nSamples: number): number[] {
-    let samples = [];
+const RandomHemisphereVector: Vec3[] = [];
+for (let i = 0; i < 256; i++) {
+    const v = Vec3();
+    v[0] = Math.random() * 2.0 - 1.0;
+    v[1] = Math.random() * 2.0 - 1.0;
+    v[2] = Math.random();
+    Vec3.normalize(v, v);
+    Vec3.scale(v, v, Math.random());
+    RandomHemisphereVector.push(v);
+}
+
+function getSamples(nSamples: number): number[] {
+    const samples = [];
     for (let i = 0; i < nSamples; i++) {
         let scale = (i * i + 2.0 * i + 1) / (nSamples * nSamples);
         scale = 0.1 + scale * (1.0 - 0.1);
 
-        samples.push(vectorSamples[i][0] * scale);
-        samples.push(vectorSamples[i][1] * scale);
-        samples.push(vectorSamples[i][2] * scale);
+        samples.push(RandomHemisphereVector[i][0] * scale);
+        samples.push(RandomHemisphereVector[i][1] * scale);
+        samples.push(RandomHemisphereVector[i][2] * scale);
     }
 
     return samples;
@@ -183,7 +202,8 @@ const PostprocessingSchema = {
     ...QuadSchema,
     tSsaoDepth: TextureSpec('texture', 'rgba', 'ubyte', 'nearest'),
     tColor: TextureSpec('texture', 'rgba', 'ubyte', 'nearest'),
-    tDepth: TextureSpec('texture', 'rgba', 'ubyte', 'nearest'),
+    tDepthOpaque: TextureSpec('texture', 'rgba', 'ubyte', 'nearest'),
+    tDepthTransparent: TextureSpec('texture', 'rgba', 'ubyte', 'nearest'),
     tOutlines: TextureSpec('texture', 'rgba', 'ubyte', 'nearest'),
     uTexSize: UniformSpec('v2'),
 
@@ -193,11 +213,13 @@ const PostprocessingSchema = {
     uFogNear: UniformSpec('f'),
     uFogFar: UniformSpec('f'),
     uFogColor: UniformSpec('v3'),
+    uOutlineColor: UniformSpec('v3'),
     uTransparentBackground: UniformSpec('b'),
 
     uMaxPossibleViewZDiff: UniformSpec('f'),
 
     dOcclusionEnable: DefineSpec('boolean'),
+    uOcclusionOffset: UniformSpec('v2'),
 
     dOutlineEnable: DefineSpec('boolean'),
     dOutlineScale: DefineSpec('number'),
@@ -205,12 +227,13 @@ const PostprocessingSchema = {
 };
 type PostprocessingRenderable = ComputeRenderable<Values<typeof PostprocessingSchema>>
 
-function getPostprocessingRenderable(ctx: WebGLContext, colorTexture: Texture, depthTexture: Texture, outlinesTexture: Texture, ssaoDepthTexture: Texture): PostprocessingRenderable {
+function getPostprocessingRenderable(ctx: WebGLContext, colorTexture: Texture, depthTextureOpaque: Texture, depthTextureTransparent: Texture, outlinesTexture: Texture, ssaoDepthTexture: Texture): PostprocessingRenderable {
     const values: Values<typeof PostprocessingSchema> = {
         ...QuadValues,
         tSsaoDepth: ValueCell.create(ssaoDepthTexture),
         tColor: ValueCell.create(colorTexture),
-        tDepth: ValueCell.create(depthTexture),
+        tDepthOpaque: ValueCell.create(depthTextureOpaque),
+        tDepthTransparent: ValueCell.create(depthTextureTransparent),
         tOutlines: ValueCell.create(outlinesTexture),
         uTexSize: ValueCell.create(Vec2.create(colorTexture.getWidth(), colorTexture.getHeight())),
 
@@ -220,11 +243,13 @@ function getPostprocessingRenderable(ctx: WebGLContext, colorTexture: Texture, d
         uFogNear: ValueCell.create(10000),
         uFogFar: ValueCell.create(10000),
         uFogColor: ValueCell.create(Vec3.create(1, 1, 1)),
+        uOutlineColor: ValueCell.create(Vec3.create(0, 0, 0)),
         uTransparentBackground: ValueCell.create(false),
 
         uMaxPossibleViewZDiff: ValueCell.create(0.5),
 
-        dOcclusionEnable: ValueCell.create(false),
+        dOcclusionEnable: ValueCell.create(true),
+        uOcclusionOffset: ValueCell.create(Vec2.create(0, 0)),
 
         dOutlineEnable: ValueCell.create(false),
         dOutlineScale: ValueCell.create(1),
@@ -241,10 +266,11 @@ function getPostprocessingRenderable(ctx: WebGLContext, colorTexture: Texture, d
 export const PostprocessingParams = {
     occlusion: PD.MappedStatic('on', {
         on: PD.Group({
-            samples: PD.Numeric(32, {min: 1, max: 256, step: 1}),
-            radius: PD.Numeric(5, { min: 0, max: 10, step: 0.1 }, { description: 'Final radius is 2^x.' }),
+            samples: PD.Numeric(32, { min: 1, max: 256, step: 1 }),
+            radius: PD.Numeric(5, { min: 0, max: 10, step: 0.1 }, { description: 'Final occlusion radius is 2^x' }),
             bias: PD.Numeric(0.8, { min: 0, max: 3, step: 0.1 }),
             blurKernelSize: PD.Numeric(15, { min: 1, max: 25, step: 2 }),
+            resolutionScale: PD.Numeric(1, { min: 0.1, max: 1, step: 0.05 }, { description: 'Adjust resolution of occlusion calculation' }),
         }),
         off: PD.Group({})
     }, { cycle: true, description: 'Darken occluded crevices with the ambient occlusion effect' }),
@@ -252,6 +278,7 @@ export const PostprocessingParams = {
         on: PD.Group({
             scale: PD.Numeric(1, { min: 1, max: 5, step: 1 }),
             threshold: PD.Numeric(0.33, { min: 0.01, max: 1, step: 0.01 }),
+            color: PD.Color(Color(0x000000)),
         }),
         off: PD.Group({})
     }, { cycle: true, description: 'Draw outline around 3D objects' }),
@@ -260,68 +287,69 @@ export const PostprocessingParams = {
         smaa: PD.Group(SmaaParams),
         off: PD.Group({})
     }, { options: [['fxaa', 'FXAA'], ['smaa', 'SMAA'], ['off', 'Off']], description: 'Smooth pixel edges' }),
+    background: PD.Group(BackgroundParams, { isFlat: true }),
 };
 export type PostprocessingProps = PD.Values<typeof PostprocessingParams>
 
 export class PostprocessingPass {
     static isEnabled(props: PostprocessingProps) {
-        return props.occlusion.name === 'on' || props.outline.name === 'on';
+        return props.occlusion.name === 'on' || props.outline.name === 'on' || props.background.variant.name !== 'off';
     }
 
-    readonly target: RenderTarget
+    static isOutlineEnabled(props: PostprocessingProps) {
+        return props.outline.name === 'on';
+    }
 
-    private readonly outlinesTarget: RenderTarget
-    private readonly outlinesRenderable: OutlinesRenderable
+    readonly target: RenderTarget;
 
-    private readonly randomHemisphereVector: Vec3[]
-    private readonly ssaoFramebuffer: Framebuffer
-    private readonly ssaoBlurFirstPassFramebuffer: Framebuffer
-    private readonly ssaoBlurSecondPassFramebuffer: Framebuffer
+    private readonly outlinesTarget: RenderTarget;
+    private readonly outlinesRenderable: OutlinesRenderable;
 
-    private readonly ssaoDepthTexture: Texture
-    private readonly ssaoDepthBlurProxyTexture: Texture
+    private readonly ssaoFramebuffer: Framebuffer;
+    private readonly ssaoBlurFirstPassFramebuffer: Framebuffer;
+    private readonly ssaoBlurSecondPassFramebuffer: Framebuffer;
 
-    private readonly ssaoRenderable: SsaoRenderable
-    private readonly ssaoBlurFirstPassRenderable: SsaoBlurRenderable
-    private readonly ssaoBlurSecondPassRenderable: SsaoBlurRenderable
+    private readonly downsampledDepthTarget: RenderTarget;
+    private readonly downsampleDepthRenderable: CopyRenderable;
 
-    private nSamples: number
-    private blurKernelSize: number
+    private readonly ssaoDepthTexture: Texture;
+    private readonly ssaoDepthBlurProxyTexture: Texture;
 
-    private readonly renderable: PostprocessingRenderable
+    private readonly ssaoRenderable: SsaoRenderable;
+    private readonly ssaoBlurFirstPassRenderable: SsaoBlurRenderable;
+    private readonly ssaoBlurSecondPassRenderable: SsaoBlurRenderable;
 
-    private ssaoScale: number
+    private nSamples: number;
+    private blurKernelSize: number;
+    private downsampleFactor: number;
+
+    private readonly renderable: PostprocessingRenderable;
+
+    private ssaoScale: number;
     private calcSsaoScale() {
         // downscale ssao for high pixel-ratios
-        return Math.min(1, 1 / this.webgl.pixelRatio);
+        return Math.min(1, 1 / this.webgl.pixelRatio) * this.downsampleFactor;
     }
 
-    constructor(private webgl: WebGLContext, drawPass: DrawPass) {
-        this.ssaoScale = this.calcSsaoScale();
+    private readonly bgColor = Vec3();
+    readonly background: BackgroundPass;
 
-        const { colorTarget, depthTexture } = drawPass;
+    constructor(private readonly webgl: WebGLContext, assetManager: AssetManager, private readonly drawPass: DrawPass) {
+        const { colorTarget, depthTextureTransparent, depthTextureOpaque } = drawPass;
         const width = colorTarget.getWidth();
         const height = colorTarget.getHeight();
 
         this.nSamples = 1;
         this.blurKernelSize = 1;
+        this.downsampleFactor = 1;
+        this.ssaoScale = this.calcSsaoScale();
 
         // needs to be linear for anti-aliasing pass
         this.target = webgl.createRenderTarget(width, height, false, 'uint8', 'linear');
 
         this.outlinesTarget = webgl.createRenderTarget(width, height, false);
-        this.outlinesRenderable = getOutlinesRenderable(webgl, depthTexture);
+        this.outlinesRenderable = getOutlinesRenderable(webgl, depthTextureOpaque, depthTextureTransparent);
 
-        this.randomHemisphereVector = [];
-        for (let i = 0; i < 256; i++) {
-            let v = Vec3();
-            v[0] = Math.random() * 2.0 - 1.0;
-            v[1] = Math.random() * 2.0 - 1.0;
-            v[2] = Math.random();
-            Vec3.normalize(v, v);
-            Vec3.scale(v, v, Math.random());
-            this.randomHemisphereVector.push(v);
-        }
         this.ssaoFramebuffer = webgl.resources.framebuffer();
         this.ssaoBlurFirstPassFramebuffer = webgl.resources.framebuffer();
         this.ssaoBlurSecondPassFramebuffer = webgl.resources.framebuffer();
@@ -329,20 +357,25 @@ export class PostprocessingPass {
         const sw = Math.floor(width * this.ssaoScale);
         const sh = Math.floor(height * this.ssaoScale);
 
-        this.ssaoDepthTexture = webgl.resources.texture('image-uint8', 'rgba', 'ubyte', 'nearest');
+        this.downsampledDepthTarget = webgl.createRenderTarget(sw, sh, false, 'uint8', 'linear');
+        this.downsampleDepthRenderable = createCopyRenderable(webgl, depthTextureOpaque);
+
+        this.ssaoDepthTexture = webgl.resources.texture('image-uint8', 'rgba', 'ubyte', 'linear');
         this.ssaoDepthTexture.define(sw, sh);
         this.ssaoDepthTexture.attachFramebuffer(this.ssaoFramebuffer, 'color0');
 
-        this.ssaoDepthBlurProxyTexture = webgl.resources.texture('image-uint8', 'rgba', 'ubyte', 'nearest');
+        this.ssaoDepthBlurProxyTexture = webgl.resources.texture('image-uint8', 'rgba', 'ubyte', 'linear');
         this.ssaoDepthBlurProxyTexture.define(sw, sh);
         this.ssaoDepthBlurProxyTexture.attachFramebuffer(this.ssaoBlurFirstPassFramebuffer, 'color0');
 
         this.ssaoDepthTexture.attachFramebuffer(this.ssaoBlurSecondPassFramebuffer, 'color0');
 
-        this.ssaoRenderable = getSsaoRenderable(webgl, depthTexture);
+        this.ssaoRenderable = getSsaoRenderable(webgl, this.downsampleFactor === 1 ? depthTextureOpaque : this.downsampledDepthTarget.texture);
         this.ssaoBlurFirstPassRenderable = getSsaoBlurRenderable(webgl, this.ssaoDepthTexture, 'horizontal');
         this.ssaoBlurSecondPassRenderable = getSsaoBlurRenderable(webgl, this.ssaoDepthBlurProxyTexture, 'vertical');
-        this.renderable = getPostprocessingRenderable(webgl, colorTarget.texture, depthTexture, this.outlinesTarget.texture, this.ssaoDepthTexture);
+        this.renderable = getPostprocessingRenderable(webgl, colorTarget.texture, depthTextureOpaque, depthTextureTransparent, this.outlinesTarget.texture, this.ssaoDepthTexture);
+
+        this.background = new BackgroundPass(webgl, assetManager, width, height);
     }
 
     setSize(width: number, height: number) {
@@ -356,14 +389,18 @@ export class PostprocessingPass {
             const sh = Math.floor(height * this.ssaoScale);
             this.target.setSize(width, height);
             this.outlinesTarget.setSize(width, height);
+            this.downsampledDepthTarget.setSize(sw, sh);
             this.ssaoDepthTexture.define(sw, sh);
             this.ssaoDepthBlurProxyTexture.define(sw, sh);
 
             ValueCell.update(this.renderable.values.uTexSize, Vec2.set(this.renderable.values.uTexSize.ref.value, width, height));
             ValueCell.update(this.outlinesRenderable.values.uTexSize, Vec2.set(this.outlinesRenderable.values.uTexSize.ref.value, width, height));
+            ValueCell.update(this.downsampleDepthRenderable.values.uTexSize, Vec2.set(this.downsampleDepthRenderable.values.uTexSize.ref.value, sw, sh));
             ValueCell.update(this.ssaoRenderable.values.uTexSize, Vec2.set(this.ssaoRenderable.values.uTexSize.ref.value, sw, sh));
             ValueCell.update(this.ssaoBlurFirstPassRenderable.values.uTexSize, Vec2.set(this.ssaoBlurFirstPassRenderable.values.uTexSize.ref.value, sw, sh));
             ValueCell.update(this.ssaoBlurSecondPassRenderable.values.uTexSize, Vec2.set(this.ssaoBlurSecondPassRenderable.values.uTexSize.ref.value, sw, sh));
+
+            this.background.setSize(width, height);
         }
     }
 
@@ -376,7 +413,7 @@ export class PostprocessingPass {
         const outlinesEnabled = props.outline.name === 'on';
         const occlusionEnabled = props.occlusion.name === 'on';
 
-        let invProjection = Mat4.identity();
+        const invProjection = Mat4.identity();
         Mat4.invert(invProjection, camera.projection);
 
         if (props.occlusion.name === 'on') {
@@ -413,7 +450,7 @@ export class PostprocessingPass {
                 needsUpdateSsao = true;
 
                 this.nSamples = props.occlusion.params.samples;
-                ValueCell.update(this.ssaoRenderable.values.uSamples, getSamples(this.randomHemisphereVector, this.nSamples));
+                ValueCell.update(this.ssaoRenderable.values.uSamples, getSamples(this.nSamples));
                 ValueCell.updateIfChanged(this.ssaoRenderable.values.dNSamples, this.nSamples);
             }
             ValueCell.updateIfChanged(this.ssaoRenderable.values.uRadius, Math.pow(2, props.occlusion.params.radius));
@@ -431,6 +468,30 @@ export class PostprocessingPass {
                 ValueCell.updateIfChanged(this.ssaoBlurSecondPassRenderable.values.dOcclusionKernelSize, this.blurKernelSize);
             }
 
+            if (this.downsampleFactor !== props.occlusion.params.resolutionScale) {
+                needsUpdateSsao = true;
+
+                this.downsampleFactor = props.occlusion.params.resolutionScale;
+                this.ssaoScale = this.calcSsaoScale();
+
+                const sw = Math.floor(w * this.ssaoScale);
+                const sh = Math.floor(h * this.ssaoScale);
+
+                this.downsampledDepthTarget.setSize(sw, sh);
+                this.ssaoDepthTexture.define(sw, sh);
+                this.ssaoDepthBlurProxyTexture.define(sw, sh);
+
+                if (this.ssaoScale === 1) {
+                    ValueCell.update(this.ssaoRenderable.values.tDepth, this.drawPass.depthTextureTransparent);
+                } else {
+                    ValueCell.update(this.ssaoRenderable.values.tDepth, this.downsampledDepthTarget.texture);
+                }
+
+                ValueCell.update(this.downsampleDepthRenderable.values.uTexSize, Vec2.set(this.downsampleDepthRenderable.values.uTexSize.ref.value, sw, sh));
+                ValueCell.update(this.ssaoRenderable.values.uTexSize, Vec2.set(this.ssaoRenderable.values.uTexSize.ref.value, sw, sh));
+                ValueCell.update(this.ssaoBlurFirstPassRenderable.values.uTexSize, Vec2.set(this.ssaoBlurFirstPassRenderable.values.uTexSize.ref.value, sw, sh));
+                ValueCell.update(this.ssaoBlurSecondPassRenderable.values.uTexSize, Vec2.set(this.ssaoBlurSecondPassRenderable.values.uTexSize.ref.value, sw, sh));
+            }
         }
 
         if (props.outline.name === 'on') {
@@ -445,6 +506,8 @@ export class PostprocessingPass {
             ValueCell.updateIfChanged(this.outlinesRenderable.values.uNear, camera.near);
             ValueCell.updateIfChanged(this.outlinesRenderable.values.uFar, camera.far);
             ValueCell.updateIfChanged(this.outlinesRenderable.values.uMaxPossibleViewZDiff, maxPossibleViewZDiff);
+
+            ValueCell.update(this.renderable.values.uOutlineColor, Color.toVec3Normalized(this.renderable.values.uOutlineColor.ref.value, props.outline.params.color));
 
             ValueCell.updateIfChanged(this.renderable.values.uMaxPossibleViewZDiff, maxPossibleViewZDiff);
             if (this.renderable.values.dOutlineScale.ref.value !== outlineScale) { needsUpdateMain = true; }
@@ -485,11 +548,24 @@ export class PostprocessingPass {
         state.depthMask(false);
 
         const { x, y, width, height } = camera.viewport;
-        gl.viewport(x, y, width, height);
-        gl.scissor(x, y, width, height);
+        state.viewport(x, y, width, height);
+        state.scissor(x, y, width, height);
+    }
+
+    private occlusionOffset: [x: number, y: number] = [0, 0];
+    setOcclusionOffset(x: number, y: number) {
+        this.occlusionOffset[0] = x;
+        this.occlusionOffset[1] = y;
+        ValueCell.update(this.renderable.values.uOcclusionOffset, Vec2.set(this.renderable.values.uOcclusionOffset.ref.value, x, y));
+    }
+
+    private transparentBackground = false;
+    setTransparentBackground(value: boolean) {
+        this.transparentBackground = value;
     }
 
     render(camera: ICamera, toDrawingBuffer: boolean, transparentBackground: boolean, backgroundColor: Color, props: PostprocessingProps) {
+        if (isTimingMode) this.webgl.timer.mark('PostprocessingPass.render');
         this.updateState(camera, transparentBackground, backgroundColor, props);
 
         if (props.outline.name === 'on') {
@@ -497,14 +573,13 @@ export class PostprocessingPass {
             this.outlinesRenderable.render();
         }
 
-        if (props.occlusion.name === 'on') {
-            const { x, y, width, height } = camera.viewport;
-            const sx = Math.floor(x * this.ssaoScale);
-            const sy = Math.floor(y * this.ssaoScale);
-            const sw = Math.ceil(width * this.ssaoScale);
-            const sh = Math.ceil(height * this.ssaoScale);
-            this.webgl.gl.viewport(sx, sy, sw, sh);
-            this.webgl.gl.scissor(sx, sy, sw, sh);
+        // don't render occlusion if offset is given,
+        // which will reuse the existing occlusion
+        if (props.occlusion.name === 'on' && this.occlusionOffset[0] === 0 && this.occlusionOffset[1] === 0) {
+            if (this.ssaoScale < 1) {
+                this.downsampledDepthTarget.bind();
+                this.downsampleDepthRenderable.render();
+            }
 
             this.ssaoFramebuffer.bind();
             this.ssaoRenderable.render();
@@ -514,9 +589,6 @@ export class PostprocessingPass {
 
             this.ssaoBlurSecondPassFramebuffer.bind();
             this.ssaoBlurSecondPassRenderable.render();
-
-            this.webgl.gl.viewport(x, y, width, height);
-            this.webgl.gl.scissor(x, y, width, height);
         }
 
         if (toDrawingBuffer) {
@@ -526,10 +598,26 @@ export class PostprocessingPass {
         }
 
         const { gl, state } = this.webgl;
-        state.clearColor(0, 0, 0, 1);
-        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        this.background.update(camera, props.background);
+        if (this.background.isEnabled(props.background)) {
+            if (this.transparentBackground) {
+                state.clearColor(0, 0, 0, 0);
+            } else {
+                Color.toVec3Normalized(this.bgColor, backgroundColor);
+                state.clearColor(this.bgColor[0], this.bgColor[1], this.bgColor[2], 1);
+            }
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            state.enable(gl.BLEND);
+            state.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+            this.background.render();
+        } else {
+            state.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+        }
 
         this.renderable.render();
+        if (isTimingMode) this.webgl.timer.markEnd('PostprocessingPass.render');
     }
 }
 
@@ -538,9 +626,9 @@ export class AntialiasingPass {
         return props.antialiasing.name !== 'off';
     }
 
-    readonly target: RenderTarget
-    private readonly fxaa: FxaaPass
-    private readonly smaa: SmaaPass
+    readonly target: RenderTarget;
+    private readonly fxaa: FxaaPass;
+    private readonly smaa: SmaaPass;
 
     constructor(webgl: WebGLContext, private drawPass: DrawPass) {
         const { colorTarget } = drawPass;

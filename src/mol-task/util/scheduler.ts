@@ -12,7 +12,7 @@
 
 declare const WorkerGlobalScope: any;
 function createImmediateActions() {
-    const global: any = (function () {
+    const thisGlobal: any = (function () {
         const _window = typeof window !== 'undefined' && window;
         const _self = typeof self !== 'undefined' && typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope && self;
         const _global = typeof global !== 'undefined' && global;
@@ -73,20 +73,20 @@ function createImmediateActions() {
     }
 
     function installNextTickImplementation() {
-        registerImmediate = function(handle) {
+        registerImmediate = function (handle) {
             process.nextTick(function () { runIfPresent(handle); });
         };
     }
 
     function canUsePostMessage() {
-        if (global && global.postMessage && !global.importScripts) {
+        if (thisGlobal && thisGlobal.postMessage && !thisGlobal.importScripts) {
             let postMessageIsAsynchronous = true;
-            const oldOnMessage = global.onmessage;
-            global.onmessage = function() {
+            const oldOnMessage = thisGlobal.onmessage;
+            thisGlobal.onmessage = function () {
                 postMessageIsAsynchronous = false;
             };
-            global.postMessage('', '*');
-            global.onmessage = oldOnMessage;
+            thisGlobal.postMessage('', '*');
+            thisGlobal.onmessage = oldOnMessage;
             return postMessageIsAsynchronous;
         }
     }
@@ -97,8 +97,8 @@ function createImmediateActions() {
         // * http://www.whatwg.org/specs/web-apps/current-work/multipage/comms.html#crossDocumentMessages
 
         const messagePrefix = 'setImmediate$' + Math.random() + '$';
-        const onGlobalMessage = function(event: any) {
-            if (event.source === global &&
+        const onGlobalMessage = function (event: any) {
+            if (event.source === thisGlobal &&
                 typeof event.data === 'string' &&
                 event.data.indexOf(messagePrefix) === 0) {
                 runIfPresent(+event.data.slice(messagePrefix.length));
@@ -111,26 +111,26 @@ function createImmediateActions() {
             (window as any).attachEvent('onmessage', onGlobalMessage);
         }
 
-        registerImmediate = function(handle) {
+        registerImmediate = function (handle) {
             window.postMessage(messagePrefix + handle, '*');
         };
     }
 
     function installMessageChannelImplementation() {
         const channel = new MessageChannel();
-        channel.port1.onmessage = function(event) {
+        channel.port1.onmessage = function (event) {
             const handle = event.data;
             runIfPresent(handle);
         };
 
-        registerImmediate = function(handle) {
+        registerImmediate = function (handle) {
             channel.port2.postMessage(handle);
         };
     }
 
     function installReadyStateChangeImplementation() {
         const html = doc!.documentElement!;
-        registerImmediate = function(handle) {
+        registerImmediate = function (handle) {
             // Create a <script> element; its readystatechange event will be fired asynchronously once it is inserted
             // into the document. Do so, thus queuing up the task. Remember to clean up once it's been called.
             let script = doc!.createElement('script') as any;
@@ -145,7 +145,7 @@ function createImmediateActions() {
     }
 
     function installSetTimeoutImplementation() {
-        registerImmediate = function(handle) {
+        registerImmediate = function (handle) {
             setTimeout(runIfPresent, 0, handle);
         };
     }

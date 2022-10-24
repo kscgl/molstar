@@ -225,12 +225,14 @@ export namespace ParamDefinition {
     export interface Group<T> extends Base<T> {
         type: 'group',
         params: Params,
+        presets?: Select<T>['options'],
         isExpanded?: boolean,
         isFlat?: boolean,
         pivot?: keyof T
     }
-    export function Group<T>(params: For<T>, info?: Info & { isExpanded?: boolean, isFlat?: boolean, customDefault?: any, pivot?: keyof T }): Group<Normalize<T>> {
+    export function Group<T>(params: For<T>, info?: Info & { isExpanded?: boolean, isFlat?: boolean, customDefault?: any, pivot?: keyof T, presets?: Select<T>['options'] }): Group<Normalize<T>> {
         const ret = setInfo<Group<Normalize<T>>>({ type: 'group', defaultValue: info?.customDefault || getDefaultValues(params as any as Params) as any, params: params as any as Params }, info);
+        if (info?.presets) ret.presets = info.presets;
         if (info?.isExpanded) ret.isExpanded = info.isExpanded;
         if (info?.isFlat) ret.isFlat = info.isFlat;
         if (info?.pivot) ret.pivot = info.pivot as any;
@@ -322,7 +324,7 @@ export namespace ParamDefinition {
         conditionForValue(v: T): keyof C
         conditionedValue(v: T, condition: keyof C): T,
     }
-    export function Conditioned<T, P extends Base<T>, C = { [k: string]: P }>(defaultValue: T, conditionParams: C, conditionForValue: (v: T) => keyof C, conditionedValue: (v: T, condition: keyof C) => T, info?: Info): Conditioned<T, P, C> {
+    export function Conditioned<T, P extends Base<T>, C extends {} = { [k: string]: P }>(defaultValue: T, conditionParams: C, conditionForValue: (v: T) => keyof C, conditionedValue: (v: T, condition: keyof C) => T, info?: Info): Conditioned<T, P, C> {
         const options = Object.keys(conditionParams).map(k => [k, k]) as [string, string][];
         return setInfo({ type: 'conditioned', select: Select<string>(conditionForValue(defaultValue) as string, options, info), defaultValue, conditionParams, conditionForValue, conditionedValue }, info);
     }

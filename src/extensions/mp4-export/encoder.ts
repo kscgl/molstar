@@ -69,11 +69,12 @@ export async function encodeMp4Animation<A extends PluginStateAnimation>(plugin:
         const dt = durationMs / N;
 
         await ctx.update({ message: 'Rendering...', isIndeterminate: false, current: 0, max: N + 1 });
+        await params.pass.updateBackground();
 
         await plugin.managers.animation.play(params.animation.definition, params.animation.params);
         stoppedAnimation = false;
         for (let i = 0; i <= N; i++) {
-            await loop.tick(i * dt, { isSynchronous: true, manualDraw: true });
+            await loop.tick(i * dt, { isSynchronous: true, animation: { currentFrame: i, frameCount: N }, manualDraw: true });
 
             const image = params.pass.getImageData(width, height, normalizedViewport);
             encoder.addFrameRgba(image.data);

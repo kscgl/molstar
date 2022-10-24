@@ -17,7 +17,7 @@ export { BitFlags, StringBuilder, UUID, Mask };
 export const noop = function () { };
 
 export function round(n: number, d: number) {
-    let f = Math.pow(10, d);
+    const f = Math.pow(10, d);
     return Math.round(f * n) / f;
 }
 
@@ -117,20 +117,20 @@ export function defaults<T>(value: T | undefined, defaultValue: T): T {
     return value !== undefined ? value : defaultValue;
 }
 
-export function extend<S, T, U>(object: S, source: T, guard?: U): S & T & U {
+export function extend<S extends {}, T extends {}, U extends {}>(object: S, source: T, guard?: U): S & T & U {
     let v: any;
 
-    let s = <any>source;
-    let o = <any>object;
-    let g = <any>guard;
-    for (let k of Object.keys(source)) {
+    const s = <any>source;
+    const o = <any>object;
+    const g = <any>guard;
+    for (const k of Object.keys(source)) {
         v = s[k];
         if (v !== void 0) o[k] = v;
         else if (guard) o[k] = g[k];
     }
 
     if (guard) {
-        for (let k of Object.keys(guard)) {
+        for (const k of Object.keys(guard)) {
             v = o[k];
             if (v === void 0) o[k] = g[k];
         }
@@ -139,14 +139,14 @@ export function extend<S, T, U>(object: S, source: T, guard?: U): S & T & U {
     return <any>object;
 }
 
-export function shallowClone<T>(o: T): T {
+export function shallowClone<T extends {}>(o: T): T {
     return extend({}, o) as T;
 }
 
 function _assign<T>(target: T): T {
     for (let s = 1; s < arguments.length; s++) {
-        let from = arguments[s];
-        for (let key of Object.keys(from)) {
+        const from = arguments[s];
+        for (const key of Object.keys(from)) {
             if (hasOwnProperty.call(from, key)) {
                 (target as any)[key] = from[key];
             }
@@ -158,9 +158,9 @@ function _assign<T>(target: T): T {
 export declare function _assignType<T>(o: T, ...from: any[]): T;
 export const assign: (<T>(o: T, ...from: any[]) => T) = (Object as any).assign || _assign;
 
-function _shallowMerge1<T>(source: T, update: T) {
+function _shallowMerge1<T extends {}>(source: T, update: T) {
     let changed = false;
-    for (let k of Object.keys(update)) {
+    for (const k of Object.keys(update)) {
         if (!hasOwnProperty.call(update, k)) continue;
 
         if ((update as any)[k] !== (source as any)[k]) {
@@ -202,4 +202,10 @@ export function formatProgress(p: Progress) {
     if (tp.isIndeterminate) return tp.message;
     const x = (100 * tp.current / tp.max).toFixed(2);
     return `${tp.message} ${x}%`;
+}
+
+export function formatBytes(count: number) {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    const i = Math.floor(Math.log(count) / Math.log(1024));
+    return `${(count / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
 }

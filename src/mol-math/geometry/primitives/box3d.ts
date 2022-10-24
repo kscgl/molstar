@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -32,7 +32,9 @@ namespace Box3D {
 
     /** Get box from sphere, uses extrema if available */
     export function fromSphere3D(out: Box3D, sphere: Sphere3D): Box3D {
-        if (Sphere3D.hasExtrema(sphere)) return fromVec3Array(out, sphere.extrema);
+        if (Sphere3D.hasExtrema(sphere) && sphere.extrema.length >= 14) { // 14 extrema with coarse boundary helper
+            return fromVec3Array(out, sphere.extrema);
+        }
         const r = Vec3.create(sphere.radius, sphere.radius, sphere.radius);
         Vec3.sub(out.min, sphere.center, r);
         Vec3.add(out.max, sphere.center, r);
@@ -107,8 +109,8 @@ namespace Box3D {
     const tmpTransformV = Vec3();
     /** Transform box with a Mat4 */
     export function transform(out: Box3D, box: Box3D, m: Mat4): Box3D {
-        const [ minX, minY, minZ ] = box.min;
-        const [ maxX, maxY, maxZ ] = box.max;
+        const [minX, minY, minZ] = box.min;
+        const [maxX, maxY, maxZ] = box.max;
         setEmpty(out);
         add(out, Vec3.transformMat4(tmpTransformV, Vec3.set(tmpTransformV, minX, minY, minZ), m));
         add(out, Vec3.transformMat4(tmpTransformV, Vec3.set(tmpTransformV, minX, minY, maxZ), m));
@@ -122,11 +124,61 @@ namespace Box3D {
     }
 
     export function containsVec3(box: Box3D, v: Vec3) {
-        return (
+        return !(
             v[0] < box.min[0] || v[0] > box.max[0] ||
             v[1] < box.min[1] || v[1] > box.max[1] ||
             v[2] < box.min[2] || v[2] > box.max[2]
-        ) ? false : true;
+        );
+    }
+
+    export function overlaps(a: Box3D, b: Box3D) {
+        return !(
+            a.max[0] < b.min[0] || a.min[0] > b.max[0] ||
+            a.max[1] < b.min[1] || a.min[1] > b.max[1] ||
+            a.max[2] < b.min[2] || a.min[2] > b.max[2]
+        );
+    }
+
+    // const tmpTransformV = Vec3();
+    export function nearestIntersectionWithRay(out: Vec3, box: Box3D, origin: Vec3, dir: Vec3): Vec3 {
+        const [minX, minY, minZ] = box.min;
+        const [maxX, maxY, maxZ] = box.max;
+        const [x, y, z] = origin;
+        const invDirX = 1.0 / dir[0];
+        const invDirY = 1.0 / dir[1];
+        const invDirZ = 1.0 / dir[2];
+        let tmin, tmax, tymin, tymax, tzmin, tzmax;
+        if (invDirX >= 0) {
+            tmin = (minX - x) * invDirX;
+            tmax = (maxX - x) * invDirX;
+        } else {
+            tmin = (maxX - x) * invDirX;
+            tmax = (minX - x) * invDirX;
+        }
+        if (invDirY >= 0) {
+            tymin = (minY - y) * invDirY;
+            tymax = (maxY - y) * invDirY;
+        } else {
+            tymin = (maxY - y) * invDirY;
+            tymax = (minY - y) * invDirY;
+        }
+        if (invDirZ >= 0) {
+            tzmin = (minZ - z) * invDirZ;
+            tzmax = (maxZ - z) * invDirZ;
+        } else {
+            tzmin = (maxZ - z) * invDirZ;
+            tzmax = (minZ - z) * invDirZ;
+        }
+        if (tymin > tmin)
+            tmin = tymin;
+        if (tymax < tmax)
+            tmax = tymax;
+        if (tzmin > tmin)
+            tmin = tzmin;
+        if (tzmax < tmax)
+            tmax = tzmax;
+        Vec3.scale(out, dir, tmin);
+        return Vec3.set(out, out[0] + x, out[1] + y, out[2] + z);
     }
 }
 

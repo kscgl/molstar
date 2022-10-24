@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -40,6 +40,7 @@ export interface Renderbuffer {
 
     bind: () => void
     attachFramebuffer: (framebuffer: Framebuffer) => void
+    detachFramebuffer: (framebuffer: Framebuffer) => void
     setSize: (width: number, height: number) => void
     reset: () => void
     destroy: () => void
@@ -53,7 +54,7 @@ function getRenderbuffer(gl: GLRenderingContext) {
     return renderbuffer;
 }
 
-export function createRenderbuffer (gl: GLRenderingContext, format: RenderbufferFormat, attachment: RenderbufferAttachment, _width: number, _height: number): Renderbuffer {
+export function createRenderbuffer(gl: GLRenderingContext, format: RenderbufferFormat, attachment: RenderbufferAttachment, _width: number, _height: number): Renderbuffer {
     let _renderbuffer = getRenderbuffer(gl);
 
     const bind = () => gl.bindRenderbuffer(gl.RENDERBUFFER, _renderbuffer);
@@ -76,6 +77,12 @@ export function createRenderbuffer (gl: GLRenderingContext, format: Renderbuffer
             framebuffer.bind();
             bind();
             gl.framebufferRenderbuffer(gl.FRAMEBUFFER, _attachment, gl.RENDERBUFFER, _renderbuffer);
+            if (isDebugMode) checkFramebufferStatus(gl);
+        },
+        detachFramebuffer: (framebuffer: Framebuffer) => {
+            framebuffer.bind();
+            bind();
+            gl.framebufferRenderbuffer(gl.FRAMEBUFFER, _attachment, gl.RENDERBUFFER, null);
             if (isDebugMode) checkFramebufferStatus(gl);
         },
         setSize: (width: number, height: number) => {

@@ -11,8 +11,7 @@ import { OrderedSet, Interval, SortedArray } from '../../../../mol-data/int';
 import { EmptyLoci, Loci } from '../../../../mol-model/loci';
 import { LocationIterator } from '../../../../mol-geo/util/location-iterator';
 import { PickingId } from '../../../../mol-geo/geometry/picking';
-import { StructureGroup } from '../../../structure/units-visual';
-import { getResidueLoci } from './common';
+import { getResidueLoci, StructureGroup } from './common';
 
 export * from './polymer/backbone';
 export * from './polymer/gap-iterator';
@@ -142,8 +141,8 @@ export function eachAtomicUnitTracedElement(offset: number, groupSize: number, e
             // full unit here
             changed = apply(Interval.ofBounds(offset, offset + groupSize)) || changed;
         } else {
-            let r1 = resIndex[elements[Interval.min(e.indices)]];
-            let r2 = resIndex[elements[Interval.max(e.indices)]];
+            const r1 = resIndex[elements[Interval.min(e.indices)]];
+            const r2 = resIndex[elements[Interval.max(e.indices)]];
             changed = tryApplyResidueInterval(offset, tracedElements, traceElementIndex, apply, r1, r2) || changed;
         }
     } else {

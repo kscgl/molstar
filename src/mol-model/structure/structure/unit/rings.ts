@@ -29,7 +29,7 @@ class UnitRings {
         readonly ringComponentIndex: ReadonlyArray<UnitRings.ComponentIndex>,
         readonly ringComponents: ReadonlyArray<ReadonlyArray<UnitRings.Index>>
     };
-    private _aromaticRings?: ReadonlyArray<UnitRings.Index>
+    private _aromaticRings?: ReadonlyArray<UnitRings.Index>;
 
     private get index() {
         if (this._index) return this._index;
@@ -122,6 +122,9 @@ namespace UnitRing {
         }
         if (aromaticBondCount === 2 * ring.length) return true;
         if (!hasAromaticRingElement) return false;
+        if (ring.length < 5) return false;
+        // no planarity-based aromaticity if any aromatic flags are present
+        if (aromaticBondCount > 0) return false;
 
         const ma = PrincipalAxes.calculateMomentsAxes(getPositions(unit, ring));
         return Vec3.magnitude(ma.dirC) < AromaticRingPlanarityThreshold;

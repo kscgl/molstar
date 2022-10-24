@@ -62,7 +62,7 @@ namespace StateAction {
             create(params) { return { action, params }; },
             id: UUID.create22(),
             definition,
-            createDefaultParams(a, globalCtx) { return definition.params ? PD.getDefaultValues( definition.params(a, globalCtx)) : {} as any; }
+            createDefaultParams(a, globalCtx) { return definition.params ? PD.getDefaultValues(definition.params(a, globalCtx)) : {} as any; }
         };
         return action;
     }
@@ -84,7 +84,7 @@ namespace StateAction {
     }
 
     export namespace Builder {
-        export interface Type<A extends StateObject.Ctor, P extends { }> {
+        export interface Type<A extends StateObject.Ctor, P extends {}> {
             from?: A | A[],
             params?: PD.For<P> | ((a: StateObject.From<A>, globalCtx: any) => PD.For<P>),
             display?: string | { name: string, description?: string },
@@ -95,7 +95,7 @@ namespace StateAction {
             <A extends StateObject.Ctor, P extends { }>(info: Type<A, P>): Define<StateObject.From<A>, PD.Normalize<P>>
         }
 
-        export interface Define<A extends StateObject, P> {
+        export interface Define<A extends StateObject, P extends {}> {
             <T>(def: DefinitionBase<A, T, P> | DefinitionBase<A, T, P>['run']): StateAction<A, T, P>,
         }
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -8,19 +8,19 @@ import { BondType } from '../../../../mol-model/structure/model/types';
 import { Unit, StructureElement, Structure, Bond } from '../../../../mol-model/structure';
 import { ParamDefinition as PD } from '../../../../mol-util/param-definition';
 import { LocationIterator } from '../../../../mol-geo/util/location-iterator';
-import { StructureGroup } from '../../units-visual';
 import { LinkCylinderParams, LinkLineParams } from './link';
 import { ObjectKeys } from '../../../../mol-util/type-helpers';
 import { PickingId } from '../../../../mol-geo/geometry/picking';
 import { EmptyLoci, Loci } from '../../../../mol-model/loci';
 import { Interval, OrderedSet, SortedArray } from '../../../../mol-data/int';
-import { isH, isHydrogen } from './common';
+import { isH, isHydrogen, StructureGroup } from './common';
 
 export const BondParams = {
     includeTypes: PD.MultiSelect(ObjectKeys(BondType.Names), PD.objectToOptions(BondType.Names)),
     excludeTypes: PD.MultiSelect([] as BondType.Names[], PD.objectToOptions(BondType.Names)),
     ignoreHydrogens: PD.Boolean(false),
-    aromaticBonds: PD.Boolean(false, { description: 'Display aromatic bonds with dashes' }),
+    aromaticBonds: PD.Boolean(true, { description: 'Display aromatic bonds with dashes' }),
+    multipleBonds: PD.Select('symmetric', PD.arrayToOptions(['off', 'symmetric', 'offset'] as const)),
 };
 export const DefaultBondProps = PD.getDefaultValues(BondParams);
 export type BondProps = typeof DefaultBondProps
@@ -28,7 +28,7 @@ export type BondProps = typeof DefaultBondProps
 export const BondCylinderParams = {
     ...LinkCylinderParams,
     ...BondParams,
-    adjustCylinderLength: PD.Boolean(true, { description: 'Shorten cylinders to reduce overlap with spheres.' })
+    adjustCylinderLength: PD.Boolean(false, { description: 'Shorten cylinders to reduce overlap with spheres. Useful for for transparent bonds. Not working well with aromatic bonds.' })
 };
 export const DefaultBondCylinderProps = PD.getDefaultValues(BondCylinderParams);
 export type BondCylinderProps = typeof DefaultBondCylinderProps
@@ -101,7 +101,7 @@ export function makeInterBondIgnoreTest(structure: Structure, props: BondProps):
             const b = edges[edgeIndex];
             const uA = structure.unitMap.get(b.unitA);
             const uB = structure.unitMap.get(b.unitB);
-            if(isHydrogen(uA, uA.elements[b.indexA]) || isHydrogen(uB, uB.elements[b.indexB])) return true;
+            if (isHydrogen(uA, uA.elements[b.indexA]) || isHydrogen(uB, uB.elements[b.indexB])) return true;
         }
 
         if (!allBondTypes) {
@@ -224,6 +224,8 @@ export function getInterBondLoci(pickingId: PickingId, structure: Structure, id:
     return EmptyLoci;
 }
 
+const __unitMap = new Map<number, OrderedSet<StructureElement.UnitIndex>>();
+
 export function eachInterBond(loci: Loci, structure: Structure, apply: (interval: Interval) => boolean, isMarking: boolean) {
     let changed = false;
     if (Bond.isLoci(loci)) {
@@ -238,14 +240,13 @@ export function eachInterBond(loci: Loci, structure: Structure, apply: (interval
         if (!Structure.areEquivalent(loci.structure, structure)) return false;
         if (isMarking && loci.elements.length === 1) return false; // only a single unit
 
-        const map = new Map<number, OrderedSet<StructureElement.UnitIndex>>();
-        for (const e of loci.elements) map.set(e.unit.id, e.indices);
+        for (const e of loci.elements) __unitMap.set(e.unit.id, e.indices);
 
         for (const e of loci.elements) {
             const { unit } = e;
             if (!Unit.isAtomic(unit)) continue;
             structure.interUnitBonds.getConnectedUnits(unit.id).forEach(b => {
-                const otherLociIndices = map.get(b.unitB);
+                const otherLociIndices = __unitMap.get(b.unitB);
                 if (!isMarking || otherLociIndices) {
                     OrderedSet.forEach(e.indices, v => {
                         if (!b.connectedIndices.includes(v)) return;
@@ -259,6 +260,8 @@ export function eachInterBond(loci: Loci, structure: Structure, apply: (interval
                 }
             });
         }
+
+        __unitMap.clear();
     }
     return changed;
 }

@@ -9,7 +9,7 @@ import {EmptyLoci, Loci} from '../../mol-model/loci';
 import {Structure, StructureElement, StructureSelection} from '../../mol-model/structure';
 import { AnimateModelIndex } from '../../mol-plugin-state/animation/built-in/model-index';
 import { BuiltInTrajectoryFormat } from '../../mol-plugin-state/formats/trajectory';
-import { createPlugin } from '../../mol-plugin-ui';
+import { createPluginUI } from '../../mol-plugin-ui';
 import { PluginUIContext } from '../../mol-plugin-ui/context';
 import { DefaultPluginUISpec } from '../../mol-plugin-ui/spec';
 import { PluginCommands } from '../../mol-plugin/commands';
@@ -35,44 +35,46 @@ import {AminoAcidNamesL, DnaBaseNames, RnaBaseNames, WaterNames} from '../../mol
 type LoadParams = { url: string, format?: BuiltInTrajectoryFormat, isBinary?: boolean, assemblyId?: string, selection?: string, displaySpikeSequence?: boolean }
 type HeatMapData = { seq: string, vol: number };
 type OverPaintData = { seq: string, color: number };
-type _Preset = Pick<Canvas3DProps, 'multiSample' | 'postprocessing' | 'renderer'>
+type _Preset = Pick<Canvas3DProps, 'postprocessing' | 'renderer'>
 type Preset = { [K in keyof _Preset]: Partial<_Preset[K]> }
 
 const Canvas3DPresets = {
-    illustrative: <Preset>{
-        multiSample: {
-            mode: 'temporal' as Canvas3DProps['multiSample']['mode']
-        },
-        postprocessing: {
-            occlusion: {name: 'on', params: {samples: 32, radius: 6, bias: 1.4, blurKernelSize: 15}},
-            /* outline: { name: 'on', params: { scale: 1, threshold: 0.1 } }*/
-        },
-        renderer: {
-            style: {name: 'flat', params: {}}
+    illustrative: {
+        canvas3d: <Preset>{
+            postprocessing: {
+                occlusion: { name: 'on', params: { samples: 32, radius: 6, bias: 1.4, blurKernelSize: 15, resolutionScale: 1 } },
+                /*outline: { name: 'on', params: { scale: 1, threshold: 0.33, color: Color(0x000000) } }*/
+            },
+            renderer: {
+                ambientIntensity: 1.0,
+                light: []
+            }
         }
     },
-    occlusion: <Preset>{
-        multiSample: {
-            mode: 'temporal' as Canvas3DProps['multiSample']['mode']
-        },
-        postprocessing: {
-            occlusion: {name: 'on', params: {samples: 32, radius: 6, bias: 1.4, blurKernelSize: 15}},
-            outline: {name: 'off', params: {}}
-        },
-        renderer: {
-            style: {name: 'matte', params: {}}
+    occlusion: {
+        canvas3d: <Preset>{
+            postprocessing: {
+                occlusion: { name: 'on', params: { samples: 32, radius: 6, bias: 1.4, blurKernelSize: 15, resolutionScale: 1 } },
+                outline: { name: 'off', params: {} }
+            },
+            renderer: {
+                ambientIntensity: 0.4,
+                light: [{ inclination: 180, azimuth: 0, color: Color.fromNormalizedRgb(1.0, 1.0, 1.0),
+                    intensity: 0.6 }]
+            }
         }
     },
-    standard: <Preset>{
-        multiSample: {
-            mode: 'off' as Canvas3DProps['multiSample']['mode']
-        },
-        postprocessing: {
-            occlusion: {name: 'off', params: {}},
-            outline: {name: 'off', params: {}}
-        },
-        renderer: {
-            style: {name: 'matte', params: {}}
+    standard: {
+        canvas3d: <Preset>{
+            postprocessing: {
+                occlusion: { name: 'off', params: {} },
+                outline: { name: 'off', params: {} }
+            },
+            renderer: {
+                ambientIntensity: 0.4,
+                light: [{ inclination: 180, azimuth: 0, color: Color.fromNormalizedRgb(1.0, 1.0, 1.0),
+                    intensity: 0.6 }]
+            }
         }
     }
 };
@@ -86,8 +88,8 @@ class BVBRCMolStarWrapper {
     private polymerSelector: StateObjectSelector<PluginStateObject.Molecule.Structure.Representation3D>;
     private ligandSelector: StateObjectSelector<PluginStateObject.Molecule.Structure.Representation3D>;
 
-    init(target: string | HTMLElement) {
-        this.plugin = createPlugin(typeof target === 'string' ? document.getElementById(target)! : target, {
+    async init(target: string | HTMLElement) {
+        this.plugin = await createPluginUI(typeof target === 'string' ? document.getElementById(target)! : target, {
             ...DefaultPluginUISpec(),
             layout: {
                 initial: {
@@ -128,7 +130,7 @@ class BVBRCMolStarWrapper {
                 params: { id: assemblyId }
             } : {
                 name: 'model',
-                params: { }
+                params: {}
             },
             showUnitcell: false,
             representationPreset: 'auto'
@@ -146,17 +148,13 @@ class BVBRCMolStarWrapper {
         const props = Canvas3DPresets['occlusion'];
         PluginCommands.Canvas3D.SetSettings(this.plugin, { settings: {
             ...props,
-            multiSample: {
-                ...this.plugin.canvas3d!.props.multiSample,
-                ...props.multiSample
-            },
             renderer: {
                 ...this.plugin.canvas3d!.props.renderer,
-                ...props.renderer
+                ...props.canvas3d.renderer
             },
             postprocessing: {
                 ...this.plugin.canvas3d!.props.postprocessing,
-                ...props.postprocessing
+                ...props.canvas3d.postprocessing
             },
         }});
 
@@ -231,12 +229,20 @@ class BVBRCMolStarWrapper {
     toggleSpin() {
         if (!this.plugin.canvas3d) return;
 
+        const trackball = this.plugin.canvas3d.props.trackball;
         PluginCommands.Canvas3D.SetSettings(this.plugin, {
-            settings: props => {
-                props.trackball.spin = !props.trackball.spin;
+            settings: {
+                trackball: {
+                    ...trackball,
+                    animate: trackball.animate.name === 'spin'
+                        ? { name: 'off', params: {} }
+                        : { name: 'spin', params: { speed: 1 } }
+                }
             }
         });
-        if (!this.plugin.canvas3d.props.trackball.spin) PluginCommands.Camera.Reset(this.plugin, {});
+        if (this.plugin.canvas3d.props.trackball.animate.name !== 'spin') {
+            PluginCommands.Camera.Reset(this.plugin, {});
+        }
     }
 
     private animateModelIndexTargetFps() {
@@ -500,17 +506,13 @@ class BVBRCMolStarWrapper {
                     PluginCommands.Canvas3D.SetSettings(this.plugin, {
                         settings: {
                             ...props,
-                            multiSample: {
-                                ...this.plugin.canvas3d!.props.multiSample,
-                                ...props.multiSample
-                            },
                             renderer: {
                                 ...this.plugin.canvas3d!.props.renderer,
-                                ...props.renderer
+                                ...props.canvas3d.renderer
                             },
                             postprocessing: {
                                 ...this.plugin.canvas3d!.props.postprocessing,
-                                ...props.postprocessing
+                                ...props.canvas3d.postprocessing
                             },
                         }
                     });

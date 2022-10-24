@@ -11,7 +11,7 @@ import { Button, ControlGroup } from './common';
 import { CloseSvg, ArrowDropDownSvg, ArrowRightSvg, CheckSvg } from './icons';
 
 export class ActionMenu extends React.PureComponent<ActionMenu.Props> {
-    hide = () => this.props.onSelect(void 0)
+    hide = () => this.props.onSelect(void 0);
 
     render() {
         const cmd = this.props;
@@ -40,7 +40,7 @@ export namespace ActionMenu {
     export type OnSelect = (item: Item | undefined, e?: React.MouseEvent<HTMLButtonElement>) => void
     export type OnSelectMany = (itemOrItems: Item[] | undefined, e?: React.MouseEvent<HTMLButtonElement>) => void
 
-    export type Items =  Header | Item | Items[]
+    export type Items = Header | Item | Items[]
     export type Header = { kind: 'header', label: string, isIndependent?: boolean, initiallyExpanded?: boolean, description?: string }
     export type Item = { kind: 'item', label: string, icon?: React.FC, disabled?: boolean, selected?: boolean, value: unknown, addOn?: JSX.Element, description?: string }
 
@@ -193,12 +193,12 @@ class Section extends React.PureComponent<SectionProps, SectionState> {
         };
     }
 
-    state = Section.createState(this.props)
+    state = Section.createState(this.props);
 
     toggleExpanded = (e: React.MouseEvent<HTMLButtonElement>) => {
         this.setState({ isExpanded: !this.state.isExpanded });
         e.currentTarget.blur();
-    }
+    };
 
     componentDidUpdate(prevProps: SectionProps) {
         if (this.props.items !== prevProps.items || this.props.current !== prevProps.current) {
@@ -215,12 +215,12 @@ class Section extends React.PureComponent<SectionProps, SectionState> {
     selectAll = () => {
         const items = collectItems(this.props.items, []).filter(i => !i.selected);
         this.props.onSelect(items as any);
-    }
+    };
 
     selectNone = () => {
         const items = collectItems(this.props.items, []).filter(i => !!i.selected);
         this.props.onSelect(items as any);
-    }
+    };
 
     get multiselectHeader() {
         const { header, hasCurrent } = this.state;

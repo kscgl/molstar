@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -41,22 +41,22 @@ export class LociLabelManager {
         this.showLabels();
     }
 
-    private locis: Representation.Loci[] = []
+    private locis: Representation.Loci[] = [];
 
     private mark(loci: Representation.Loci, action: MarkerAction) {
         const idx = this.locis.findIndex(l => Representation.Loci.areEqual(loci, l));
         if (idx === -1 && action === MarkerAction.Highlight) {
             this.locis.push(loci);
             this.isDirty = true;
-        } else if(idx !== -1 && action === MarkerAction.RemoveHighlight) {
+        } else if (idx !== -1 && action === MarkerAction.RemoveHighlight) {
             arrayRemoveAtInPlace(this.locis, idx);
             this.isDirty = true;
         }
     }
 
-    private isDirty = false
-    private labels: LociLabel[] = []
-    private groupedLabels = new Map<string, LociLabel[]>()
+    private isDirty = false;
+    private labels: LociLabel[] = [];
+    private groupedLabels = new Map<string, LociLabel[]>();
 
     private showLabels() {
         this.ctx.behaviors.labels.highlight.next({ labels: this.getLabels() });
@@ -92,9 +92,9 @@ export class LociLabelManager {
     }
 
     constructor(public ctx: PluginContext) {
-        ctx.managers.interactivity.lociHighlights.addProvider((loci, action) => {
+        ctx.managers.interactivity.lociHighlights.addProvider((loci, action, noRender) => {
             this.mark(loci, action);
-            this.showLabels();
+            if (!noRender) this.showLabels();
         });
     }
 }

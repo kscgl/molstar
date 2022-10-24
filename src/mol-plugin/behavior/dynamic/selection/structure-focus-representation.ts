@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -18,6 +18,8 @@ import { SizeTheme } from '../../../../mol-theme/size';
 import { ParamDefinition as PD } from '../../../../mol-util/param-definition';
 import { PluginCommands } from '../../../commands';
 import { PluginContext } from '../../../context';
+import { Material } from '../../../../mol-util/material';
+import { Clip } from '../../../../mol-util/clip';
 
 const StructureFocusRepresentationParams = (plugin: PluginContext) => {
     const reprParams = StateTransforms.Representation.StructureRepresentation3D.definition.params!(void 0, plugin) as PD.Params;
@@ -25,11 +27,19 @@ const StructureFocusRepresentationParams = (plugin: PluginContext) => {
         expandRadius: PD.Numeric(5, { min: 1, max: 10, step: 1 }),
         targetParams: PD.Group(reprParams, {
             label: 'Target',
-            customDefault: createStructureRepresentationParams(plugin, void 0, { type: 'ball-and-stick', size: 'physical', typeParams: { sizeFactor: 0.26, alpha: 0.51 } })
+            customDefault: createStructureRepresentationParams(plugin, void 0, {
+                type: 'ball-and-stick',
+                size: 'physical',
+                typeParams: { sizeFactor: 0.22, sizeAspectRatio: 0.73, adjustCylinderLength: true, xrayShaded: true, aromaticBonds: false, multipleBonds: 'off', excludeTypes: ['hydrogen-bond', 'metal-coordination'] },
+            })
         }),
         surroundingsParams: PD.Group(reprParams, {
             label: 'Surroundings',
-            customDefault: createStructureRepresentationParams(plugin, void 0, { type: 'ball-and-stick', size: 'physical', typeParams: { sizeFactor: 0.16 } })
+            customDefault: createStructureRepresentationParams(plugin, void 0, {
+                type: 'ball-and-stick',
+                size: 'physical',
+                typeParams: { sizeFactor: 0.16, excludeTypes: ['hydrogen-bond', 'metal-coordination'] }
+            })
         }),
         nciParams: PD.Group(reprParams, {
             label: 'Non-covalent Int.',
@@ -41,7 +51,10 @@ const StructureFocusRepresentationParams = (plugin: PluginContext) => {
         }),
         components: PD.MultiSelect(FocusComponents, PD.arrayToOptions(FocusComponents)),
         excludeTargetFromSurroundings: PD.Boolean(false, { label: 'Exclude Target', description: 'Exclude the focus "target" from the surroudings component.' }),
-        ignoreHydrogens: PD.Boolean(false)
+        ignoreHydrogens: PD.Boolean(false),
+        ignoreLight: PD.Boolean(false),
+        material: Material.getParam(),
+        clip: PD.Group(Clip.Params),
     };
 };
 
@@ -64,10 +77,10 @@ class StructureFocusRepresentationBehavior extends PluginBehavior.WithSubscriber
 
     private getReprParams(reprParams: PD.Values<PD.Params>) {
         return {
-            ...this.params.targetParams,
+            ...reprParams,
             type: {
                 name: reprParams.type.name,
-                params: { ...reprParams.type.params, ignoreHydrogens: this.params.ignoreHydrogens }
+                params: { ...reprParams.type.params, ignoreHydrogens: this.params.ignoreHydrogens, ignoreLight: this.params.ignoreLight, material: this.params.material, clip: this.params.clip }
             }
         };
     }
@@ -110,7 +123,7 @@ class StructureFocusRepresentationBehavior extends PluginBehavior.WithSubscriber
         if (components.indexOf('interactions') >= 0 && !refs[StructureFocusRepresentationTags.SurrNciRepr] && cell.obj && InteractionsRepresentationProvider.isApplicable(cell.obj?.data)) {
             refs[StructureFocusRepresentationTags.SurrNciRepr] = builder
                 .to(refs[StructureFocusRepresentationTags.SurrSel]!)
-                .apply(StateTransforms.Representation.StructureRepresentation3D, this.params.nciParams, { tags: StructureFocusRepresentationTags.SurrNciRepr }).ref;
+                .apply(StateTransforms.Representation.StructureRepresentation3D, this.getReprParams(this.params.nciParams), { tags: StructureFocusRepresentationTags.SurrNciRepr }).ref;
         }
 
         return { state, builder, refs };
@@ -157,7 +170,7 @@ class StructureFocusRepresentationBehavior extends PluginBehavior.WithSubscriber
         });
 
         if (this.params.excludeTargetFromSurroundings) {
-            surroundings =  MS.struct.modifier.exceptBy({
+            surroundings = MS.struct.modifier.exceptBy({
                 0: surroundings,
                 by: target
             });
@@ -212,7 +225,7 @@ class StructureFocusRepresentationBehavior extends PluginBehavior.WithSubscriber
         hasComponent = components.indexOf('interactions') >= 0;
         for (const repr of state.select(all.withTag(StructureFocusRepresentationTags.SurrNciRepr))) {
             if (!hasComponent) builder.delete(repr.transform.ref);
-            else builder.to(repr).update(this.params.nciParams);
+            else builder.to(repr).update(this.getReprParams(this.params.nciParams));
         }
 
         await PluginCommands.State.Update(this.plugin, { state, tree: builder, options: { doNotLogTiming: true, doNotUpdateCurrent: true } });

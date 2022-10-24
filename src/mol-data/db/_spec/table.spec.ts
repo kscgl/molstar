@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017-2018 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2017-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -61,6 +61,29 @@ describe('column', () => {
     });
 });
 
+describe('string column', () => {
+    const xs = ['A', 'b', null, undefined];
+    const xsArr = xs.map(x => x ?? '');
+    const xsLC = xs.map(x => (x ?? '').toLowerCase());
+    const arr = Column.ofArray({ array: xs as any, schema: Column.Schema.str });
+    const arrLC = Column.ofArray({ array: xs as any, schema: Column.Schema.Str({ transform: 'lowercase' }) });
+    const aliasedLC = Column.ofArray({ array: xs as any, schema: Column.Schema.Aliased<'a' | 'b'>(Column.Schema.lstr) });
+
+    it('value', () => {
+        for (let i = 0; i < xs.length; i++) {
+            expect(arr.value(i)).toBe(xs[i] ?? '');
+            expect(arrLC.value(i)).toBe(xsLC[i] ?? '');
+            expect(aliasedLC.value(i)).toBe(xsLC[i]);
+        }
+    });
+
+    it('array', () => {
+        expect(arr.toArray()).toEqual(xsArr);
+        expect(arrLC.toArray()).toEqual(xsLC);
+        expect(aliasedLC.toArray()).toEqual(xsLC);
+    });
+});
+
 describe('table', () => {
     const schema = {
         x: Column.Schema.int,
@@ -100,7 +123,7 @@ describe('table', () => {
             n: Column.ofArray({ array: ['row1', 'row2'], schema: Column.Schema.str }),
         });
         const s = { x: Column.Schema.int, y: Column.Schema.int };
-        const picked = Table.pickColumns(s, t, { y: Column.ofArray({ array: [3, 4], schema: Column.Schema.int })});
+        const picked = Table.pickColumns(s, t, { y: Column.ofArray({ array: [3, 4], schema: Column.Schema.int }) });
         expect(picked._columns).toEqual(['x', 'y']);
         expect(picked._rowCount).toEqual(2);
         expect(picked.x.toArray()).toEqual([10, -1]);

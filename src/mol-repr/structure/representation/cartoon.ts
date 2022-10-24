@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -18,6 +18,7 @@ import { PolymerTraceParams, PolymerTraceVisual } from '../visual/polymer-trace-
 import { SecondaryStructureProvider } from '../../../mol-model-props/computed/secondary-structure';
 import { CustomProperty } from '../../../mol-model-props/common/custom-property';
 import { HelixOrientationProvider } from '../../../mol-model-props/computed/helix-orientation';
+import { BaseGeometry } from '../../../mol-geo/geometry/base';
 
 const CartoonVisuals = {
     'polymer-trace': (ctx: RepresentationContext, getParams: RepresentationParamsGetter<Structure, PolymerTraceParams>) => UnitsRepresentation('Polymer trace mesh', ctx, getParams, PolymerTraceVisual),
@@ -34,7 +35,8 @@ export const CartoonParams = {
     ...NucleotideRingParams,
     ...PolymerDirectionParams,
     sizeFactor: PD.Numeric(0.2, { min: 0, max: 10, step: 0.01 }),
-    visuals: PD.MultiSelect(['polymer-trace', 'polymer-gap', 'nucleotide-block'], PD.objectToOptions(CartoonVisuals)),
+    visuals: PD.MultiSelect(['polymer-trace', 'polymer-gap', 'nucleotide-ring'], PD.objectToOptions(CartoonVisuals)),
+    bumpFrequency: PD.Numeric(2, { min: 0, max: 10, step: 0.1 }, BaseGeometry.ShadingCategory),
 };
 
 export type CartoonParams = typeof CartoonParams
@@ -47,7 +49,7 @@ export function getCartoonParams(ctx: ThemeRegistryContext, structure: Structure
         if (!hasGaps && u.gapElements.length) hasGaps = true;
     });
     params.visuals.defaultValue = ['polymer-trace'];
-    if (hasNucleotides) params.visuals.defaultValue.push('nucleotide-block');
+    if (hasNucleotides) params.visuals.defaultValue.push('nucleotide-ring');
     if (hasGaps) params.visuals.defaultValue.push('polymer-gap');
     return params;
 }

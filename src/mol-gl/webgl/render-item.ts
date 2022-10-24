@@ -1,11 +1,12 @@
 /**
- * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
+ * @author Gianluca Tomasello <giagitom@gmail.com>
  */
 
 import { createAttributeBuffers, ElementsBuffer, AttributeKind } from './buffer';
-import { createTextures, Texture, Textures } from './texture';
+import { createTextures, Texture } from './texture';
 import { WebGLContext, checkError } from './context';
 import { ShaderCode, DefineValues } from '../shader-code';
 import { Program } from './program';
@@ -42,20 +43,23 @@ export interface RenderItem<T extends string> {
     readonly materialId: number
     getProgram: (variant: T) => Program
 
-    render: (variant: T, sharedTexturesList?: Textures) => void
+    render: (variant: T, sharedTexturesCount: number) => void
     update: () => Readonly<ValueChanges>
     destroy: () => void
 }
 
 //
 
-const GraphicsRenderVariant = { 'colorBlended': '', 'colorWboit': '', 'pickObject': '', 'pickInstance': '', 'pickGroup': '', 'depth': '' };
+const GraphicsRenderVariant = { colorBlended: '', colorWboit: '', colorDpoit: '', pick: '', depth: '', marking: '' };
 export type GraphicsRenderVariant = keyof typeof GraphicsRenderVariant
-const GraphicsRenderVariants = Object.keys(GraphicsRenderVariant) as GraphicsRenderVariant[];
+export const GraphicsRenderVariants = Object.keys(GraphicsRenderVariant) as GraphicsRenderVariant[];
+export const GraphicsRenderVariantsBlended = GraphicsRenderVariants.filter(v => !['colorWboit', 'colorDpoit'].includes(v));
+export const GraphicsRenderVariantsWboit = GraphicsRenderVariants.filter(v => !['colorBlended', 'colorDpoit'].includes(v));
+export const GraphicsRenderVariantsDpoit = GraphicsRenderVariants.filter(v => !['colorWboit', 'colorBlended'].includes(v));
 
-const ComputeRenderVariant = { 'compute': '' };
+const ComputeRenderVariant = { compute: '' };
 export type ComputeRenderVariant = keyof typeof ComputeRenderVariant
-const ComputeRenderVariants = Object.keys(ComputeRenderVariant) as ComputeRenderVariant[];
+export const ComputeRenderVariants = Object.keys(ComputeRenderVariant) as ComputeRenderVariant[];
 
 function createProgramVariant(ctx: WebGLContext, variant: string, defineValues: DefineValues, shaderCode: ShaderCode, schema: RenderableSchema) {
     defineValues = { ...defineValues, dRenderVariant: ValueCell.create(variant) };
@@ -67,15 +71,9 @@ function createProgramVariant(ctx: WebGLContext, variant: string, defineValues: 
 
 //
 
-type ProgramVariants = { [k: string]: Program }
-type VertexArrayVariants = { [k: string]: VertexArray | null }
+type ProgramVariants = Record<string, Program>
+type VertexArrayVariants = Record<string, VertexArray | null>
 
-interface ValueChanges {
-    attributes: boolean
-    defines: boolean
-    elements: boolean
-    textures: boolean
-}
 function createValueChanges() {
     return {
         attributes: false,
@@ -84,6 +82,8 @@ function createValueChanges() {
         textures: false,
     };
 }
+type ValueChanges = ReturnType<typeof createValueChanges>
+
 function resetValueChanges(valueChanges: ValueChanges) {
     valueChanges.attributes = false;
     valueChanges.defines = false;
@@ -94,8 +94,8 @@ function resetValueChanges(valueChanges: ValueChanges) {
 //
 
 export type GraphicsRenderItem = RenderItem<GraphicsRenderVariant>
-export function createGraphicsRenderItem(ctx: WebGLContext, drawMode: DrawMode, shaderCode: ShaderCode, schema: RenderableSchema, values: RenderableValues, materialId: number) {
-    return createRenderItem(ctx, drawMode, shaderCode, schema, values, materialId, GraphicsRenderVariants);
+export function createGraphicsRenderItem(ctx: WebGLContext, drawMode: DrawMode, shaderCode: ShaderCode, schema: RenderableSchema, values: RenderableValues, materialId: number, variants: GraphicsRenderVariant[]) {
+    return createRenderItem(ctx, drawMode, shaderCode, schema, values, materialId, variants);
 }
 
 export type ComputeRenderItem = RenderItem<ComputeRenderVariant>
@@ -114,18 +114,13 @@ export function createRenderItem<T extends string>(ctx: WebGLContext, drawMode: 
     const { instancedArrays, vertexArrayObject } = ctx.extensions;
 
     // emulate gl_VertexID when needed
-    // if (!ctx.isWebGL2 && values.uVertexCount) {
-    // not using gl_VertexID in WebGL2 but aVertex to ensure there is an active attribute with divisor 0
-    // since FF 85 this is not needed anymore but lets keep it for backwards compatibility
-    // https://bugzilla.mozilla.org/show_bug.cgi?id=1679693
-    // see also note in src/mol-gl/shader/chunks/common-vert-params.glsl.ts
-    if (values.uVertexCount) {
+    if (values.uVertexCount && !ctx.extensions.noNonInstancedActiveAttribs) {
         const vertexCount = values.uVertexCount.ref.value;
         (values as any).aVertex = ValueCell.create(fillSerial(new Float32Array(vertexCount)));
         (schema as any).aVertex = AttributeSpec('float32', 1, 0);
     }
 
-    const { attributeValues, defineValues, textureValues, uniformValues, materialUniformValues, bufferedUniformValues } = splitValues(schema, values);
+    const { attributeValues, defineValues, textureValues, materialTextureValues, uniformValues, materialUniformValues, bufferedUniformValues } = splitValues(schema, values);
 
     const uniformValueEntries = Object.entries(uniformValues);
     const materialUniformValueEntries = Object.entries(materialUniformValues);
@@ -143,6 +138,7 @@ export function createRenderItem<T extends string>(ctx: WebGLContext, drawMode: 
     }
 
     const textures = createTextures(ctx, schema, textureValues);
+    const materialTextures = createTextures(ctx, schema, materialTextureValues);
     const attributeBuffers = createAttributeBuffers(ctx, schema, attributeValues);
 
     let elementsBuffer: ElementsBuffer | undefined;
@@ -156,8 +152,8 @@ export function createRenderItem<T extends string>(ctx: WebGLContext, drawMode: 
         vertexArrays[k] = vertexArrayObject ? resources.vertexArray(programs[k], attributeBuffers, elementsBuffer) : null;
     }
 
-    let drawCount = values.drawCount.ref.value;
-    let instanceCount = values.instanceCount.ref.value;
+    let drawCount: number = values.drawCount.ref.value;
+    let instanceCount: number = values.instanceCount.ref.value;
 
     stats.drawCount += drawCount;
     stats.instanceCount += instanceCount;
@@ -173,17 +169,12 @@ export function createRenderItem<T extends string>(ctx: WebGLContext, drawMode: 
         materialId,
         getProgram: (variant: T) => programs[variant],
 
-        render: (variant: T, sharedTexturesList?: Textures) => {
-            if (drawCount === 0 || instanceCount === 0 || ctx.isContextLost) return;
+        render: (variant: T, sharedTexturesCount: number) => {
+            if (drawCount === 0 || instanceCount === 0) return;
             const program = programs[variant];
             if (program.id === currentProgramId && state.currentRenderItemId === id) {
                 program.setUniforms(uniformValueEntries);
-                if (sharedTexturesList && sharedTexturesList.length > 0) {
-                    program.bindTextures(sharedTexturesList, 0);
-                    program.bindTextures(textures, sharedTexturesList.length);
-                } else {
-                    program.bindTextures(textures, 0);
-                }
+                program.bindTextures(textures, sharedTexturesCount);
             } else {
                 const vertexArray = vertexArrays[variant];
                 if (program.id !== state.currentProgramId || program.id !== currentProgramId ||
@@ -192,17 +183,13 @@ export function createRenderItem<T extends string>(ctx: WebGLContext, drawMode: 
                     // console.log('program.id changed or materialId changed/-1', materialId)
                     if (program.id !== state.currentProgramId) program.use();
                     program.setUniforms(materialUniformValueEntries);
+                    program.bindTextures(materialTextures, sharedTexturesCount + textures.length);
                     state.currentMaterialId = materialId;
                     currentProgramId = program.id;
                 }
                 program.setUniforms(uniformValueEntries);
                 program.setUniforms(frontBufferUniformValueEntries);
-                if (sharedTexturesList && sharedTexturesList.length > 0) {
-                    program.bindTextures(sharedTexturesList, 0);
-                    program.bindTextures(textures, sharedTexturesList.length);
-                } else {
-                    program.bindTextures(textures, 0);
-                }
+                program.bindTextures(textures, sharedTexturesCount);
                 if (vertexArray) {
                     vertexArray.bind();
                     // need to bind elements buffer explicitly since it is not always recorded in the VAO
@@ -326,6 +313,22 @@ export function createRenderItem<T extends string>(ctx: WebGLContext, drawMode: 
                         valueChanges.textures = true;
                     } else {
                         textures[i][1] = value.ref.value as Texture;
+                    }
+                    versions[k] = value.ref.version;
+                }
+            }
+
+            for (let i = 0, il = materialTextures.length; i < il; ++i) {
+                const [k, texture] = materialTextures[i];
+                const value = materialTextureValues[k];
+                if (value.ref.version !== versions[k]) {
+                    // update of textures with kind 'texture' is done externally
+                    if (schema[k].kind !== 'texture') {
+                        // console.log('texture version changed, uploading image', k);
+                        texture.load(value.ref.value as TextureImage<any> | TextureVolume<any>);
+                        valueChanges.textures = true;
+                    } else {
+                        materialTextures[i][1] = value.ref.value as Texture;
                     }
                     versions[k] = value.ref.version;
                 }

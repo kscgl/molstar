@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Schäfer, Marco <marco.schaefer@uni-tuebingen.de>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -19,6 +19,7 @@ import { ParamDefinition as PD } from '../../mol-util/param-definition';
 import { ColorNames } from '../../mol-util/color/names';
 import { deepClone } from '../../mol-util/object';
 import { stringToWords } from '../../mol-util/string';
+import { ValueCell } from '../../mol-util/value-cell';
 
 // TODO support 'edge' element, see https://www.mathworks.com/help/vision/ug/the-ply-format.html
 // TODO support missing face element
@@ -40,8 +41,8 @@ function createPlyShapeParams(plyFile?: PlyFile) {
                 type === 'ushort' || type === 'uint16' ||
                 type === 'uint' || type === 'uint32' ||
                 type === 'int'
-            ) groupOptions.push([ name, name ]);
-            if (type === 'uchar' || type === 'uint8') colorOptions.push([ name, name ]);
+            ) groupOptions.push([name, name]);
+            if (type === 'uchar' || type === 'uint8') colorOptions.push([name, name]);
         }
 
         // TODO hardcoded as convenience for data provided by MegaMol
@@ -58,7 +59,7 @@ function createPlyShapeParams(plyFile?: PlyFile) {
         for (let i = 0, il = material.propertyNames.length; i < il; ++i) {
             const name = material.propertyNames[i];
             const type = material.propertyTypes[i];
-            if (type === 'uchar' || type === 'uint8') materialOptions.push([ name, name ]);
+            if (type === 'uchar' || type === 'uint8') materialOptions.push([name, name]);
         }
 
         if (material.propertyNames.includes('red')) defaultValues.mRed = 'red';
@@ -170,6 +171,9 @@ async function getMesh(ctx: RuntimeContext, vertex: PlyTable, face: PlyList, gro
     const m = MeshBuilder.getMesh(builderState);
     if (!hasNormals) Mesh.computeNormals(m);
 
+    // TODO: check if needed
+    ValueCell.updateIfChanged(m.varyingGroup, true);
+
     return m;
 }
 
@@ -186,7 +190,7 @@ function getGrouping(vertex: PlyTable, props: PD.Values<PlyShapeParams>): Groupi
     const maxId = column ? arrayMax(ids) : rowCount - 1; // assumes uint ids
     const map = new Uint32Array(maxId + 1);
     for (let i = 0, il = ids.length; i < il; ++i) map[ids[i]] = i;
-    return { ids, map, label  };
+    return { ids, map, label };
 }
 
 type Coloring = { kind: 'vertex' | 'material' | 'uniform', red: Column<number>, green: Column<number>, blue: Column<number> }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -8,9 +8,10 @@ import { WebGLContext } from './context';
 import { ValueCell } from '../../mol-util';
 import { RenderableSchema } from '../renderable/schema';
 import { idFactory } from '../../mol-util/id-factory';
-import { ValueOf } from '../../mol-util/type-helpers';
-import { GLRenderingContext } from './compat';
+import { assertUnreachable, ValueOf } from '../../mol-util/type-helpers';
+import { GLRenderingContext, isWebGL2 } from './compat';
 import { WebGLExtensions } from './extensions';
+import { WebGLState } from './state';
 
 const getNextBufferId = idFactory();
 
@@ -47,6 +48,7 @@ export function getDataType(gl: GLRenderingContext, dataType: DataType) {
         case 'uint32': return gl.UNSIGNED_INT;
         case 'int32': return gl.INT;
         case 'float32': return gl.FLOAT;
+        default: assertUnreachable(dataType);
     }
 }
 
@@ -65,16 +67,20 @@ function dataTypeFromArray(gl: GLRenderingContext, array: ArrayType) {
         return gl.INT;
     } else if (array instanceof Float32Array) {
         return gl.FLOAT;
-    } else {
-        throw new Error('Should nevver happen');
     }
+    assertUnreachable(array);
 }
 
 export function getBufferType(gl: GLRenderingContext, bufferType: BufferType) {
     switch (bufferType) {
         case 'attribute': return gl.ARRAY_BUFFER;
         case 'elements': return gl.ELEMENT_ARRAY_BUFFER;
-        case 'uniform': return (gl as WebGL2RenderingContext).UNIFORM_BUFFER;
+        case 'uniform':
+            if (isWebGL2(gl)) {
+                return gl.UNIFORM_BUFFER;
+            } else {
+                throw new Error('WebGL2 is required for uniform buffers');
+            }
     }
 }
 
@@ -157,18 +163,10 @@ function createBuffer(gl: GLRenderingContext, array: ArrayType, usageHint: Usage
 //
 
 export type AttributeItemSize = 1 | 2 | 3 | 4 | 16
-export type AttributeKind = 'float32' | 'int32'
+export type AttributeKind = 'float32'
 
 export function getAttribType(gl: GLRenderingContext, kind: AttributeKind, itemSize: AttributeItemSize) {
     switch (kind) {
-        case 'int32':
-            switch (itemSize) {
-                case 1: return gl.INT;
-                case 2: return gl.INT_VEC2;
-                case 3: return gl.INT_VEC3;
-                case 4: return gl.INT_VEC4;
-            }
-            break;
         case 'float32':
             switch (itemSize) {
                 case 1: return gl.FLOAT;
@@ -177,9 +175,9 @@ export function getAttribType(gl: GLRenderingContext, kind: AttributeKind, itemS
                 case 4: return gl.FLOAT_VEC4;
                 case 16: return gl.FLOAT_MAT4;
             }
-            break;
+        default:
+            assertUnreachable(kind);
     }
-    throw new Error(`unknown attribute type for kind '${kind}' and itemSize '${itemSize}'`);
 }
 
 export type AttributeDefs = {
@@ -192,7 +190,7 @@ export interface AttributeBuffer extends Buffer {
     bind: (location: number) => void
 }
 
-export function createAttributeBuffer<T extends ArrayType, S extends AttributeItemSize>(gl: GLRenderingContext, extensions: WebGLExtensions, array: T, itemSize: S, divisor: number, usageHint: UsageHint = 'dynamic'): AttributeBuffer {
+export function createAttributeBuffer<T extends ArrayType, S extends AttributeItemSize>(gl: GLRenderingContext, state: WebGLState, extensions: WebGLExtensions, array: T, itemSize: S, divisor: number, usageHint: UsageHint = 'dynamic'): AttributeBuffer {
     const { instancedArrays } = extensions;
 
     const buffer = createBuffer(gl, array, usageHint, 'attribute');
@@ -204,12 +202,12 @@ export function createAttributeBuffer<T extends ArrayType, S extends AttributeIt
             gl.bindBuffer(_bufferType, buffer.getBuffer());
             if (itemSize === 16) {
                 for (let i = 0; i < 4; ++i) {
-                    gl.enableVertexAttribArray(location + i);
+                    state.enableVertexAttrib(location + i);
                     gl.vertexAttribPointer(location + i, 4, _dataType, false, 4 * 4 * _bpe, i * 4 * _bpe);
                     instancedArrays.vertexAttribDivisor(location + i, divisor);
                 }
             } else {
-                gl.enableVertexAttribArray(location);
+                state.enableVertexAttrib(location);
                 gl.vertexAttribPointer(location, itemSize, _dataType, false, 0, 0);
                 instancedArrays.vertexAttribDivisor(location, divisor);
             }

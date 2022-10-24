@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -19,6 +19,7 @@ import { isPowerOfTwo } from '../../../mol-math/misc';
 import { quad_vert } from '../../../mol-gl/shader/quad.vert';
 import { reduction_frag } from '../../../mol-gl/shader/histogram-pyramid/reduction.frag';
 import { isWebGL2 } from '../../webgl/compat';
+import { isTimingMode } from '../../../mol-util/debug';
 
 const HistopyramidReductionSchema = {
     ...QuadSchema,
@@ -64,21 +65,19 @@ function createHistopyramidReductionRenderable(ctx: WebGLContext, inputLevel: Te
 }
 
 type TextureFramebuffer = { texture: Texture, framebuffer: Framebuffer }
-const LevelTexturesFramebuffers: TextureFramebuffer[] = [];
 function getLevelTextureFramebuffer(ctx: WebGLContext, level: number) {
-    let textureFramebuffer = LevelTexturesFramebuffers[level];
     const size = Math.pow(2, level);
-    if (textureFramebuffer === undefined) {
-        const texture = ctx.isWebGL2
-            ? getTexture(`level${level}`, ctx, 'image-int32', 'alpha', 'int', 'nearest')
-            : getTexture(`level${level}`, ctx, 'image-uint8', 'rgba', 'ubyte', 'nearest');
-        texture.define(size, size);
-        const framebuffer = getFramebuffer(`level${level}`, ctx);
+    const name = `level${level}`;
+    const texture = ctx.isWebGL2
+        ? getTexture(name, ctx, 'image-int32', 'alpha', 'int', 'nearest')
+        : getTexture(name, ctx, 'image-uint8', 'rgba', 'ubyte', 'nearest');
+    texture.define(size, size);
+    let framebuffer = tryGetFramebuffer(name, ctx);
+    if (!framebuffer) {
+        framebuffer = getFramebuffer(name, ctx);
         texture.attachFramebuffer(framebuffer, 0);
-        textureFramebuffer = { texture, framebuffer };
-        LevelTexturesFramebuffers[level] = textureFramebuffer;
     }
-    return textureFramebuffer;
+    return { texture, framebuffer };
 }
 
 function setRenderingDefaults(ctx: WebGLContext) {
@@ -108,6 +107,11 @@ function getTexture(name: string, webgl: WebGLContext, kind: TextureKind, format
     return webgl.namedTextures[_name];
 }
 
+function tryGetFramebuffer(name: string, webgl: WebGLContext): Framebuffer | undefined {
+    const _name = `${HistogramPyramidName}-${name}`;
+    return webgl.namedFramebuffers[_name];
+}
+
 export interface HistogramPyramid {
     pyramidTex: Texture
     count: number
@@ -117,7 +121,8 @@ export interface HistogramPyramid {
 }
 
 export function createHistogramPyramid(ctx: WebGLContext, inputTexture: Texture, scale: Vec2, gridTexDim: Vec3): HistogramPyramid {
-    const { gl } = ctx;
+    if (isTimingMode) ctx.timer.mark('createHistogramPyramid');
+    const { gl, state } = ctx;
     const w = inputTexture.getWidth();
     const h = inputTexture.getHeight();
 
@@ -141,7 +146,7 @@ export function createHistogramPyramid(ctx: WebGLContext, inputTexture: Texture,
     const framebuffer = getFramebuffer('pyramid', ctx);
     pyramidTex.attachFramebuffer(framebuffer, 0);
 
-    gl.viewport(0, 0, maxSizeX, maxSizeY);
+    state.viewport(0, 0, maxSizeX, maxSizeY);
     if (isWebGL2(gl)) {
         gl.clearBufferiv(gl.COLOR, 0, [0, 0, 0, 0]);
     } else {
@@ -152,7 +157,7 @@ export function createHistogramPyramid(ctx: WebGLContext, inputTexture: Texture,
     for (let i = 0; i < levels; ++i) levelTexturesFramebuffers.push(getLevelTextureFramebuffer(ctx, i));
 
     const renderable = getHistopyramidReductionRenderable(ctx, inputTexture, levelTexturesFramebuffers[0].texture);
-    ctx.state.currentRenderItemId = -1;
+    state.currentRenderItemId = -1;
     setRenderingDefaults(ctx);
 
     let offset = 0;
@@ -171,15 +176,15 @@ export function createHistogramPyramid(ctx: WebGLContext, inputTexture: Texture,
             ValueCell.update(renderable.values.tPreviousLevel, levelTexturesFramebuffers[levels - i].texture);
             renderable.update();
         }
-        ctx.state.currentRenderItemId = -1;
-        gl.viewport(0, 0, size, size);
-        gl.scissor(0, 0, size, size);
+        state.currentRenderItemId = -1;
+        state.viewport(0, 0, size, size);
+        state.scissor(0, 0, size, size);
         if (isWebGL2(gl)) {
             gl.clearBufferiv(gl.COLOR, 0, [0, 0, 0, 0]);
         } else {
             gl.clear(gl.COLOR_BUFFER_BIT);
         }
-        gl.scissor(0, 0, gridTexDim[0], gridTexDim[1]);
+        state.scissor(0, 0, gridTexDim[0], gridTexDim[1]);
         renderable.render();
 
         pyramidTex.bind(0);
@@ -190,8 +195,9 @@ export function createHistogramPyramid(ctx: WebGLContext, inputTexture: Texture,
     }
 
     gl.finish();
+    if (isTimingMode) ctx.timer.markEnd('createHistogramPyramid');
 
-    // printTexture(ctx, pyramidTex, 2)
+    // printTextureImage(readTexture(ctx, pyramidTex), { scale: 0.75 });
 
     //
 

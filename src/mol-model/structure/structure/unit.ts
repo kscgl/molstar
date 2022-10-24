@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2017-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -25,6 +25,7 @@ import { Mat4, Vec3 } from '../../../mol-math/linear-algebra';
 import { IndexPairBonds } from '../../../mol-model-formats/structure/property/bonds/index-pair';
 import { ElementSetIntraBondCache } from './unit/bonds/element-set-intra-bond-cache';
 import { ModelSymmetry } from '../../../mol-model-formats/structure/property/symmetry';
+import { getResonance, UnitResonance } from './unit/resonance';
 
 /**
  * A building block of a structure that corresponds to an atomic or
@@ -84,7 +85,7 @@ namespace Unit {
         return {
             elements: units[0].elements,
             units,
-            get unitIndexMap () {
+            get unitIndexMap() {
                 if (props.unitIndexMap) return props.unitIndexMap;
                 props.unitIndexMap = getUnitIndexMap(units);
                 return props.unitIndexMap;
@@ -112,7 +113,7 @@ namespace Unit {
         }
     }
 
-    export function conformationId (unit: Unit) {
+    export function conformationId(unit: Unit) {
         return Unit.isAtomic(unit) ? unit.model.atomicConformation.id : unit.model.coarseConformation.id;
     }
 
@@ -144,7 +145,7 @@ namespace Unit {
 
         getChild(elements: StructureElement.Set): Unit,
         applyOperator(id: number, operator: SymmetryOperator, dontCompose?: boolean /* = false */): Unit,
-        remapModel(model: Model): Unit,
+        remapModel(model: Model, dynamicBonds: boolean): Unit,
 
         readonly boundary: Boundary
         readonly lookup3d: Lookup3D<StructureElement.UnitIndex>
@@ -218,9 +219,14 @@ namespace Unit {
             return new Atomic(id, this.invariantId, this.chainGroupId, this.traits, this.model, this.elements, SymmetryOperator.createMapping(op, this.model.atomicConformation, this.conformation.r), this.props);
         }
 
-        remapModel(model: Model, props?: AtomicProperties) {
+        remapModel(model: Model, dynamicBonds: boolean, props?: AtomicProperties) {
             if (!props) {
-                props = { ...this.props, bonds: tryRemapBonds(this, this.props.bonds, model) };
+                props = {
+                    ...this.props,
+                    bonds: dynamicBonds && !this.props.bonds?.props?.canRemap
+                        ? undefined
+                        : tryRemapBonds(this, this.props.bonds, model, dynamicBonds)
+                };
                 if (!Unit.isSameConformation(this, model)) {
                     props.boundary = undefined;
                     props.lookup3d = undefined;
@@ -280,6 +286,12 @@ namespace Unit {
             if (this.props.rings) return this.props.rings;
             this.props.rings = UnitRings.create(this);
             return this.props.rings;
+        }
+
+        get resonance() {
+            if (this.props.resonance) return this.props.resonance;
+            this.props.resonance = getResonance(this);
+            return this.props.resonance;
         }
 
         get polymerElements() {
@@ -342,6 +354,7 @@ namespace Unit {
     interface AtomicProperties extends BaseProperties {
         bonds?: IntraUnitBonds
         rings?: UnitRings
+        resonance?: UnitResonance
         nucleotideElements?: SortedArray<ElementIndex>
         proteinElements?: SortedArray<ElementIndex>
         residueCount?: number
@@ -369,7 +382,7 @@ namespace Unit {
         readonly props: CoarseProperties;
 
         getChild(elements: StructureElement.Set): Unit {
-            if (elements.length === this.elements.length) return this as any as Unit /** lets call this an ugly temporary hack */;
+            if (elements.length === this.elements.length) return this as any as Unit; // lets call this an ugly temporary hack
             return createCoarse(this.id, this.invariantId, this.chainGroupId, this.traits, this.model, this.kind, elements, this.conformation, CoarseProperties());
         }
 
@@ -378,7 +391,7 @@ namespace Unit {
             return createCoarse(id, this.invariantId, this.chainGroupId, this.traits, this.model, this.kind, this.elements, SymmetryOperator.createMapping(op, this.getCoarseConformation(), this.conformation.r), this.props);
         }
 
-        remapModel(model: Model, props?: CoarseProperties): Unit.Spheres | Unit.Gaussians {
+        remapModel(model: Model, dynamicBonds: boolean, props?: CoarseProperties): Unit.Spheres | Unit.Gaussians {
             const coarseConformation = this.getCoarseConformation();
             const modelCoarseConformation = getCoarseConformation(this.kind, model);
 
@@ -465,7 +478,7 @@ namespace Unit {
     export class Gaussians extends Coarse<Kind.Gaussians, CoarseGaussianConformation> { }
 
     function createCoarse<K extends Kind.Gaussians | Kind.Spheres>(id: number, invariantId: number, chainGroupId: number, traits: Traits, model: Model, kind: K, elements: StructureElement.Set, conformation: SymmetryOperator.ArrayMapping<ElementIndex>, props: CoarseProperties): K extends Kind.Spheres ? Spheres : Gaussians {
-        return new Coarse(id, invariantId, chainGroupId, traits, model, kind, elements, conformation, props) as any /** lets call this an ugly temporary hack */;
+        return new Coarse(id, invariantId, chainGroupId, traits, model, kind, elements, conformation, props) as any; // lets call this an ugly temporary hack
     }
 
     export function areSameChainOperatorGroup(a: Unit, b: Unit) {
@@ -481,7 +494,7 @@ namespace Unit {
         return isSameConformation(a, b.model);
     }
 
-    function tryRemapBonds(a: Atomic, old: IntraUnitBonds | undefined, model: Model) {
+    function tryRemapBonds(a: Atomic, old: IntraUnitBonds | undefined, model: Model, dynamicBonds: boolean) {
         // TODO: should include additional checks?
 
         if (!old) return void 0;
@@ -495,7 +508,7 @@ namespace Unit {
             return void 0;
         }
 
-        if (old.props?.canRemap) {
+        if (old.props?.canRemap || !dynamicBonds) {
             return old;
         }
         return isSameConformation(a, model) ? old : void 0;

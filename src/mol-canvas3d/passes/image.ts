@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -17,38 +17,42 @@ import { Viewport } from '../camera/util';
 import { PixelData } from '../../mol-util/image';
 import { Helper } from '../helper/helper';
 import { CameraHelper, CameraHelperParams } from '../helper/camera-helper';
+import { MarkingParams } from './marking';
+import { AssetManager } from '../../mol-util/assets';
 
 export const ImageParams = {
     transparentBackground: PD.Boolean(false),
+    dpoitIterations: PD.Numeric(2, { min: 1, max: 10, step: 1 }),
     multiSample: PD.Group(MultiSampleParams),
     postprocessing: PD.Group(PostprocessingParams),
+    marking: PD.Group(MarkingParams),
 
     cameraHelper: PD.Group(CameraHelperParams),
 };
 export type ImageProps = PD.Values<typeof ImageParams>
 
 export class ImagePass {
-    private _width = 0
-    private _height = 0
-    private _camera = new Camera()
+    private _width = 0;
+    private _height = 0;
+    private _camera = new Camera();
 
-    readonly props: ImageProps
+    readonly props: ImageProps;
 
-    private _colorTarget: RenderTarget
+    private _colorTarget: RenderTarget;
     get colorTarget() { return this._colorTarget; }
 
-    private readonly drawPass: DrawPass
-    private readonly multiSamplePass: MultiSamplePass
-    private readonly multiSampleHelper: MultiSampleHelper
-    private readonly helper: Helper
+    private readonly drawPass: DrawPass;
+    private readonly multiSamplePass: MultiSamplePass;
+    private readonly multiSampleHelper: MultiSampleHelper;
+    private readonly helper: Helper;
 
     get width() { return this._width; }
     get height() { return this._height; }
 
-    constructor(private webgl: WebGLContext, private renderer: Renderer, private scene: Scene, private camera: Camera, helper: Helper, enableWboit: boolean, props: Partial<ImageProps>) {
+    constructor(private webgl: WebGLContext, assetManager: AssetManager, private renderer: Renderer, private scene: Scene, private camera: Camera, helper: Helper, enableWboit: boolean, enableDpoit: boolean, props: Partial<ImageProps>) {
         this.props = { ...PD.getDefaultValues(ImageParams), ...props };
 
-        this.drawPass = new DrawPass(webgl, 128, 128, enableWboit);
+        this.drawPass = new DrawPass(webgl, assetManager, 128, 128, enableWboit, enableDpoit);
         this.multiSamplePass = new MultiSamplePass(webgl, this.drawPass);
         this.multiSampleHelper = new MultiSampleHelper(this.multiSamplePass);
 
@@ -59,6 +63,14 @@ export class ImagePass {
         };
 
         this.setSize(1024, 768);
+    }
+
+    updateBackground() {
+        return new Promise<void>(resolve => {
+            this.drawPass.postprocessing.background.update(this.camera, this.props.postprocessing.background, () => {
+                resolve();
+            });
+        });
     }
 
     setSize(width: number, height: number) {
@@ -81,11 +93,12 @@ export class ImagePass {
         Viewport.set(this._camera.viewport, 0, 0, this._width, this._height);
         this._camera.update();
 
+        const ctx = { renderer: this.renderer, camera: this._camera, scene: this.scene, helper: this.helper };
         if (MultiSamplePass.isEnabled(this.props.multiSample)) {
-            this.multiSampleHelper.render(this.renderer, this._camera, this.scene, this.helper, false, this.props.transparentBackground, this.props);
+            this.multiSampleHelper.render(ctx, this.props, false);
             this._colorTarget = this.multiSamplePass.colorTarget;
         } else {
-            this.drawPass.render(this.renderer, this._camera, this.scene, this.helper, false, this.props.transparentBackground, this.props.postprocessing);
+            this.drawPass.render(ctx, this.props, false);
             this._colorTarget = this.drawPass.getColorTarget(this.props.postprocessing);
         }
     }

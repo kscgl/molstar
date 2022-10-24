@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -23,6 +23,7 @@ import { StateTransforms } from '../mol-plugin-state/transforms';
 import { BoxifyVolumeStreaming, CreateVolumeStreamingBehavior, InitVolumeStreaming } from '../mol-plugin/behavior/dynamic/volume-streaming/transformers';
 import { AnimateStateInterpolation } from '../mol-plugin-state/animation/built-in/state-interpolation';
 import { AnimateStructureSpin } from '../mol-plugin-state/animation/built-in/spin-structure';
+import { AnimateCameraRock } from '../mol-plugin-state/animation/built-in/camera-rock';
 
 export { PluginSpec };
 
@@ -63,10 +64,10 @@ namespace PluginSpec {
 export const DefaultPluginSpec = (): PluginSpec => ({
     actions: [
         PluginSpec.Action(StateActions.Structure.DownloadStructure),
-        PluginSpec.Action(StateActions.Structure.AddTrajectory),
         PluginSpec.Action(StateActions.Volume.DownloadDensity),
         PluginSpec.Action(StateActions.DataFormat.DownloadFile),
         PluginSpec.Action(StateActions.DataFormat.OpenFiles),
+        PluginSpec.Action(StateActions.Structure.LoadTrajectory),
         PluginSpec.Action(StateActions.Structure.EnableModelCustomProps),
         PluginSpec.Action(StateActions.Structure.EnableStructureCustomProps),
 
@@ -101,6 +102,8 @@ export const DefaultPluginSpec = (): PluginSpec => ({
         PluginSpec.Action(StateTransforms.Representation.UnwindStructureAssemblyRepresentation3D),
         PluginSpec.Action(StateTransforms.Representation.OverpaintStructureRepresentation3DFromScript),
         PluginSpec.Action(StateTransforms.Representation.TransparencyStructureRepresentation3DFromScript),
+        PluginSpec.Action(StateTransforms.Representation.ClippingStructureRepresentation3DFromScript),
+        PluginSpec.Action(StateTransforms.Representation.SubstanceStructureRepresentation3DFromScript),
 
         PluginSpec.Action(AssignColorVolume),
         PluginSpec.Action(StateTransforms.Volume.VolumeFromCcp4),
@@ -129,6 +132,7 @@ export const DefaultPluginSpec = (): PluginSpec => ({
     animations: [
         AnimateModelIndex,
         AnimateCameraSpin,
+        AnimateCameraRock,
         AnimateStateSnapshots,
         AnimateAssemblyUnwind,
         AnimateStructureSpin,

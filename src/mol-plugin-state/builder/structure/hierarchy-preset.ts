@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2020-2021 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -17,6 +17,7 @@ import { Vec3 } from '../../../mol-math/linear-algebra';
 import { Model } from '../../../mol-model/structure';
 import { getStructureQuality } from '../../../mol-repr/util';
 import { OperatorNameColorThemeProvider } from '../../../mol-theme/color/operator-name';
+import { PluginConfig } from '../../../mol-plugin/config';
 
 export interface TrajectoryHierarchyPresetProvider<P = any, S = {}> extends PresetProvider<PluginStateObject.Molecule.Trajectory, P, S> { }
 export function TrajectoryHierarchyPresetProvider<P, S>(preset: TrajectoryHierarchyPresetProvider<P, S>) { return preset; }
@@ -33,7 +34,7 @@ export namespace TrajectoryHierarchyPresetProvider {
 
 const CommonParams = TrajectoryHierarchyPresetProvider.CommonParams;
 
-const DefaultParams = (a: PluginStateObject.Molecule.Trajectory | undefined, plugin: PluginContext) =>  ({
+const DefaultParams = (a: PluginStateObject.Molecule.Trajectory | undefined, plugin: PluginContext) => ({
     model: PD.Optional(PD.Group(StateTransformer.getParamDefinition(StateTransforms.Model.ModelFromTrajectory, a, plugin))),
     showUnitcell: PD.Optional(PD.Boolean(false)),
     structure: PD.Optional(RootStructureDefinition.getParams(void 0, 'assembly').type),
@@ -61,7 +62,8 @@ const defaultPreset = TrajectoryHierarchyPresetProvider({
         const structureProperties = await builder.insertStructureProperties(structure, params.structureProperties);
 
         const unitcell = params.showUnitcell === void 0 || !!params.showUnitcell ? await builder.tryCreateUnitcell(modelProperties, undefined, { isHidden: true }) : void 0;
-        const representation = await plugin.builders.structure.representation.applyPreset(structureProperties, params.representationPreset || 'auto', params.representationPresetParams);
+        const representationPreset = params.representationPreset || plugin.config.get(PluginConfig.Structure.DefaultRepresentationPreset) || PresetStructureRepresentations.auto.id;
+        const representation = await plugin.builders.structure.representation.applyPreset(structureProperties, representationPreset, params.representationPresetParams);
 
         return {
             model,
@@ -84,7 +86,7 @@ const allModels = TrajectoryHierarchyPresetProvider({
     id: 'preset-trajectory-all-models',
     display: {
         name: 'All Models', group: 'Preset',
-        description: 'Shows all models; colored by model-index.'
+        description: 'Shows all models; colored by trajectory-index.'
     },
     isApplicable: o => {
         return o.data.frameCount > 1;
@@ -112,7 +114,8 @@ const allModels = TrajectoryHierarchyPresetProvider({
             structures.push(structure);
 
             const quality = structure.obj ? getStructureQuality(structure.obj.data, { elementCountFactor: tr.frameCount }) : 'medium';
-            await builder.representation.applyPreset(structureProperties, params.representationPreset || 'auto', { theme: { globalName: 'model-index' }, quality });
+            const representationPreset = params.representationPreset || plugin.config.get(PluginConfig.Structure.DefaultRepresentationPreset) || PresetStructureRepresentations.auto.id;
+            await builder.representation.applyPreset(structureProperties, representationPreset, { theme: { globalName: 'trajectory-index' }, quality });
         }
 
         return { models, structures };
@@ -137,7 +140,8 @@ async function applyCrystalSymmetry(props: { ijkMin: Vec3, ijkMax: Vec3, theme?:
     const structureProperties = await builder.insertStructureProperties(structure, params.structureProperties);
 
     const unitcell = await builder.tryCreateUnitcell(modelProperties, undefined, { isHidden: false });
-    const representation =  await plugin.builders.structure.representation.applyPreset(structureProperties, params.representationPreset || 'auto', { theme: { globalName: props.theme } });
+    const representationPreset = params.representationPreset || plugin.config.get(PluginConfig.Structure.DefaultRepresentationPreset) || PresetStructureRepresentations.auto.id;
+    const representation = await plugin.builders.structure.representation.applyPreset(structureProperties, representationPreset, { theme: { globalName: props.theme } });
 
     return {
         model,
@@ -207,7 +211,8 @@ const crystalContacts = TrajectoryHierarchyPresetProvider({
         const structureProperties = await builder.insertStructureProperties(structure, params.structureProperties);
 
         const unitcell = await builder.tryCreateUnitcell(modelProperties, undefined, { isHidden: true });
-        const representation =  await plugin.builders.structure.representation.applyPreset(structureProperties, params.representationPreset || 'auto', { theme: { globalName: 'operator-name', carbonColor: 'operator-name', focus: { name: 'element-symbol', params: { carbonColor: { name: 'operator-name', params: OperatorNameColorThemeProvider.defaultValues } } } } });
+        const representationPreset = params.representationPreset || plugin.config.get(PluginConfig.Structure.DefaultRepresentationPreset) || PresetStructureRepresentations.auto.id;
+        const representation = await plugin.builders.structure.representation.applyPreset(structureProperties, representationPreset, { theme: { globalName: 'operator-name', carbonColor: 'operator-name', focus: { name: 'element-symbol', params: { carbonColor: { name: 'operator-name', params: OperatorNameColorThemeProvider.defaultValues } } } } });
 
         return {
             model,

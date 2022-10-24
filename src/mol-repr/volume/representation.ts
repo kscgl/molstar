@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2020 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  */
@@ -32,6 +32,8 @@ import { SizeValues } from '../../mol-gl/renderable/schema';
 import { Clipping } from '../../mol-theme/clipping';
 import { WebGLContext } from '../../mol-gl/webgl/context';
 import { isPromiseLike } from '../../mol-util/type-helpers';
+import { Substance } from '../../mol-theme/substance';
+import { createMarkers } from '../../mol-geo/geometry/marker-data';
 
 export interface VolumeVisual<P extends VolumeParams> extends Visual<Volume, P> { }
 
@@ -74,6 +76,7 @@ export function VolumeVisual<G extends Geometry, P extends VolumeParams & Geomet
     let currentVolume: Volume;
 
     let geometry: G;
+    let geometryVersion = -1;
     let locationIt: LocationIterator;
     let positionIt: LocationIterator;
 
@@ -106,6 +109,10 @@ export function VolumeVisual<G extends Geometry, P extends VolumeParams & Geomet
         if (updateState.createGeometry) {
             updateState.updateColor = true;
         }
+
+        if (newProps.instanceGranularity !== currentProps.instanceGranularity) {
+            updateState.updateTransform = true;
+        }
     }
 
     function update(newGeometry?: G) {
@@ -122,12 +129,24 @@ export function VolumeVisual<G extends Geometry, P extends VolumeParams & Geomet
                 throw new Error('expected renderObject to be available');
             }
 
-            locationIt.reset();
+            if (updateState.updateTransform) {
+                // console.log('update transform');
+                locationIt = createLocationIterator(newVolume);
+                const { instanceCount, groupCount } = locationIt;
+                if (newProps.instanceGranularity) {
+                    createMarkers(instanceCount, 'instance', renderObject.values);
+                } else {
+                    createMarkers(instanceCount * groupCount, 'groupInstance', renderObject.values);
+                }
+            } else {
+                locationIt.reset();
+            }
 
             if (updateState.createGeometry) {
                 if (newGeometry) {
                     ValueCell.updateIfChanged(renderObject.values.drawCount, Geometry.getDrawCount(newGeometry));
                     ValueCell.updateIfChanged(renderObject.values.uVertexCount, Geometry.getVertexCount(newGeometry));
+                    ValueCell.updateIfChanged(renderObject.values.uGroupCount, Geometry.getGroupCount(newGeometry));
                 } else {
                     throw new Error('expected geometry to be given');
                 }
@@ -156,20 +175,41 @@ export function VolumeVisual<G extends Geometry, P extends VolumeParams & Geomet
         currentProps = newProps;
         currentTheme = newTheme;
         currentVolume = newVolume;
-        if (newGeometry) geometry = newGeometry;
+        if (newGeometry) {
+            geometry = newGeometry;
+            geometryVersion += 1;
+        }
+    }
+
+    function eachInstance(loci: Loci, volume: Volume, apply: (interval: Interval) => boolean) {
+        let changed = false;
+        if (!Volume.Cell.isLoci(loci)) return false;
+        if (Volume.Cell.isLociEmpty(loci)) return false;
+        if (!Volume.areEquivalent(loci.volume, volume)) return false;
+        if (apply(Interval.ofSingleton(0))) changed = true;
+        return changed;
     }
 
     function lociApply(loci: Loci, apply: (interval: Interval) => boolean) {
         if (isEveryLoci(loci)) {
-            return apply(Interval.ofBounds(0, locationIt.groupCount * locationIt.instanceCount));
+            if (currentProps.instanceGranularity) {
+                return apply(Interval.ofBounds(0, locationIt.instanceCount));
+            } else {
+                return apply(Interval.ofBounds(0, locationIt.groupCount * locationIt.instanceCount));
+            }
         } else {
-            return eachLocation(loci, currentVolume, currentProps, apply);
+            if (currentProps.instanceGranularity) {
+                return eachInstance(loci, currentVolume, apply);
+            } else {
+                return eachLocation(loci, currentVolume, currentProps, apply);
+            }
         }
     }
 
     return {
         get groupCount() { return locationIt ? locationIt.count : 0; },
-        get renderObject () { return renderObject; },
+        get renderObject() { return renderObject; },
+        get geometryVersion() { return geometryVersion; },
         async createOrUpdate(ctx: VisualContext, theme: Theme, props: Partial<PD.Values<P>> = {}, volume?: Volume) {
             prepareUpdate(theme, props, volume || currentVolume);
             if (updateState.createGeometry) {
@@ -206,6 +246,9 @@ export function VolumeVisual<G extends Geometry, P extends VolumeParams & Geomet
         setTransparency(transparency: Transparency) {
             return Visual.setTransparency(renderObject, transparency, lociApply, true);
         },
+        setSubstance(substance: Substance) {
+            return Visual.setSubstance(renderObject, substance, lociApply, true);
+        },
         setClipping(clipping: Clipping) {
             return Visual.setClipping(renderObject, clipping, lociApply, true);
         },
@@ -236,6 +279,7 @@ export function VolumeRepresentation<P extends VolumeParams>(label: string, ctx:
     let version = 0;
     const { webgl } = ctx;
     const updated = new Subject<number>();
+    const geometryState = new Representation.GeometryState();
     const materialId = getNextMaterialId();
     const renderObjects: GraphicsRenderObject[] = [];
     const _state = Representation.createState();
@@ -266,7 +310,11 @@ export function VolumeRepresentation<P extends VolumeParams>(label: string, ctx:
             if (promise) await promise;
             // update list of renderObjects
             renderObjects.length = 0;
-            if (visual && visual.renderObject) renderObjects.push(visual.renderObject);
+            if (visual && visual.renderObject) {
+                renderObjects.push(visual.renderObject);
+                geometryState.add(visual.renderObject.id, visual.geometryVersion);
+            }
+            geometryState.snapshot();
             // increment version
             updated.next(version++);
         });
@@ -300,18 +348,21 @@ export function VolumeRepresentation<P extends VolumeParams>(label: string, ctx:
         get groupCount() {
             return visual ? visual.groupCount : 0;
         },
-        get props () { return _props; },
+        get props() { return _props; },
         get params() { return _params; },
         get state() { return _state; },
         get theme() { return _theme; },
+        get geometryVersion() { return geometryState.version; },
         renderObjects,
         updated,
         createOrUpdate,
         setState,
         setTheme,
-        getLoci: (pickingId?: PickingId): Loci => {
-            if (pickingId === undefined) return getLoci(_volume, _props);
+        getLoci: (pickingId: PickingId): Loci => {
             return visual ? visual.getLoci(pickingId) : EmptyLoci;
+        },
+        getAllLoci: (): Loci[] => {
+            return [getLoci(_volume, _props)];
         },
         mark,
         destroy

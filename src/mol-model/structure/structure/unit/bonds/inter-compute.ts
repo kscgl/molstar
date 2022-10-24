@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017-2020 Mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2017-2022 Mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -8,7 +8,7 @@
 import { BondType, MoleculeType } from '../../../model/types';
 import { Structure } from '../../structure';
 import { Unit } from '../../unit';
-import { getElementIdx, getElementPairThreshold, getElementThreshold, isHydrogen, BondComputationProps, MetalsSet, DefaultBondComputationProps } from './common';
+import { getElementIdx, getElementThreshold, isHydrogen, BondComputationProps, MetalsSet, DefaultBondComputationProps, getPairingThreshold } from './common';
 import { InterUnitBonds, InterUnitEdgeProps } from './data';
 import { SortedArray } from '../../../../../mol-data/int';
 import { Vec3, Mat4 } from '../../../../../mol-math/linear-algebra';
@@ -21,20 +21,26 @@ import { StructConn } from '../../../../../mol-model-formats/structure/property/
 import { equalEps } from '../../../../../mol-math/linear-algebra/3d/common';
 import { Model } from '../../../model';
 
-const MAX_RADIUS = 4;
+// avoiding namespace lookup improved performance in Chrome (Aug 2020)
+const v3distance = Vec3.distance;
+const v3set = Vec3.set;
+const v3squaredDistance = Vec3.squaredDistance;
+const v3transformMat4 = Vec3.transformMat4;
 
 const tmpDistVecA = Vec3();
 const tmpDistVecB = Vec3();
 function getDistance(unitA: Unit.Atomic, indexA: ElementIndex, unitB: Unit.Atomic, indexB: ElementIndex) {
     unitA.conformation.position(indexA, tmpDistVecA);
     unitB.conformation.position(indexB, tmpDistVecB);
-    return Vec3.distance(tmpDistVecA, tmpDistVecB);
+    return v3distance(tmpDistVecA, tmpDistVecB);
 }
 
 const _imageTransform = Mat4();
 const _imageA = Vec3();
 
 function findPairBonds(unitA: Unit.Atomic, unitB: Unit.Atomic, props: BondComputationProps, builder: InterUnitGraph.Builder<number, StructureElement.UnitIndex, InterUnitEdgeProps>) {
+    const { maxRadius } = props;
+
     const { elements: atomsA, residueIndex: residueIndexA } = unitA;
     const { x: xA, y: yA, z: zA } = unitA.model.atomicConformation;
     const { elements: atomsB, residueIndex: residueIndexB } = unitB;
@@ -62,31 +68,52 @@ function findPairBonds(unitA: Unit.Atomic, unitB: Unit.Atomic, props: BondComput
     const isNotIdentity = !Mat4.isIdentity(imageTransform);
 
     const { center: bCenter, radius: bRadius } = unitB.boundary.sphere;
-    const testDistanceSq = (bRadius + MAX_RADIUS) * (bRadius + MAX_RADIUS);
+    const testDistanceSq = (bRadius + maxRadius) * (bRadius + maxRadius);
 
     builder.startUnitPair(unitA.id, unitB.id);
 
     for (let _aI = 0 as StructureElement.UnitIndex; _aI < atomCount; _aI++) {
         const aI = atomsA[_aI];
-        Vec3.set(_imageA, xA[aI], yA[aI], zA[aI]);
-        if (isNotIdentity) Vec3.transformMat4(_imageA, _imageA, imageTransform);
-        if (Vec3.squaredDistance(_imageA, bCenter) > testDistanceSq) continue;
+        v3set(_imageA, xA[aI], yA[aI], zA[aI]);
+        if (isNotIdentity) v3transformMat4(_imageA, _imageA, imageTransform);
+        if (v3squaredDistance(_imageA, bCenter) > testDistanceSq) continue;
 
         if (!props.forceCompute && indexPairs) {
-            const { order, distance, flag } = indexPairs.edgeProps;
+            const { maxDistance } = indexPairs;
+            const { offset, b, edgeProps: { order, distance, flag, key } } = indexPairs.bonds;
 
             const srcA = sourceIndex.value(aI);
-            for (let i = indexPairs.offset[srcA], il = indexPairs.offset[srcA + 1]; i < il; ++i) {
-                const bI = invertedIndex![indexPairs.b[i]];
+            const aeI = getElementIdx(type_symbolA.value(aI));
+            for (let i = offset[srcA], il = offset[srcA + 1]; i < il; ++i) {
+                const bI = invertedIndex![b[i]];
 
                 const _bI = SortedArray.indexOf(unitB.elements, bI) as StructureElement.UnitIndex;
                 if (_bI < 0) continue;
-                if (type_symbolA.value(aI) === 'H' && type_symbolB.value(bI) === 'H') continue;
+
+                const beI = getElementIdx(type_symbolA.value(bI));
 
                 const d = distance[i];
-                // only allow inter-unit index-pair bonds when a distance is given
-                if (d !== -1 && equalEps(getDistance(unitA, aI, unitB, bI), d, 0.5)) {
-                    builder.add(_aI, _bI, { order: order[i], flag: flag[i] });
+                const dist = getDistance(unitA, aI, unitB, bI);
+
+                let add = false;
+                if (d >= 0) {
+                    add = equalEps(dist, d, 0.3);
+                } else if (maxDistance >= 0) {
+                    add = dist < maxDistance;
+                } else {
+                    const pairingThreshold = getPairingThreshold(
+                        aeI, beI, getElementThreshold(aeI), getElementThreshold(beI)
+                    );
+                    add = dist < pairingThreshold;
+
+                    if (isHydrogen(aeI) && isHydrogen(beI)) {
+                        // TODO handle molecular hydrogen
+                        add = false;
+                    }
+                }
+
+                if (add) {
+                    builder.add(_aI, _bI, { order: order[i], flag: flag[i], key: key[i] });
                 }
             }
             continue; // assume `indexPairs` supplies all bonds
@@ -102,9 +129,9 @@ function findPairBonds(unitA: Unit.Atomic, unitB: Unit.Atomic, props: BondComput
                 if (_bI < 0) continue;
 
                 // check if the bond is within MAX_RADIUS for this pair of units
-                if (getDistance(unitA, aI, unitB, p.atomIndex) > MAX_RADIUS) continue;
+                if (getDistance(unitA, aI, unitB, p.atomIndex) > maxRadius) continue;
 
-                builder.add(_aI, _bI, { order: se.order, flag: se.flags });
+                builder.add(_aI, _bI, { order: se.order, flag: se.flags, key: se.rowIndex });
                 added = true;
             }
             // assume, for an atom, that if any inter unit bond is given
@@ -116,7 +143,7 @@ function findPairBonds(unitA: Unit.Atomic, unitB: Unit.Atomic, props: BondComput
         const occA = occupancyA.value(aI);
 
         const { lookup3d } = unitB;
-        const { indices, count, squaredDistances } = lookup3d.find(_imageA[0], _imageA[1], _imageA[2], MAX_RADIUS);
+        const { indices, count, squaredDistances } = lookup3d.find(_imageA[0], _imageA[1], _imageA[2], maxRadius);
         if (count === 0) continue;
 
         const aeI = getElementIdx(type_symbolA.value(aI));
@@ -138,7 +165,7 @@ function findPairBonds(unitA: Unit.Atomic, unitB: Unit.Atomic, props: BondComput
             // TODO: is this condition good enough?
             // - It works for cases like 3WQJ (label_asym_id: I) which have partial occupancy.
             // - Does NOT work for cases like 1RB8 (DC 7) with full occupancy.
-            if (hasOccupancy && occupancyB.value(bI) < 1 && occA < 1)  {
+            if (hasOccupancy && occupancyB.value(bI) < 1 && occA < 1) {
                 if (auth_seq_idA.value(aI) === auth_seq_idB.value(bI)) {
                     continue;
                 }
@@ -154,19 +181,14 @@ function findPairBonds(unitA: Unit.Atomic, unitB: Unit.Atomic, props: BondComput
             const dist = Math.sqrt(squaredDistances[ni]);
             if (dist === 0) continue;
 
-            const thresholdAB = getElementPairThreshold(aeI, beI);
-            const pairingThreshold = thresholdAB > 0
-                ? thresholdAB
-                : beI < 0
-                    ? thresholdA
-                    : (thresholdA + getElementThreshold(beI)) / 1.95; // not sure if avg or min but max is too big
-
+            const pairingThreshold = getPairingThreshold(aeI, beI, thresholdA, getElementThreshold(beI));
             if (dist <= pairingThreshold) {
                 const atomIdB = label_atom_idB.value(bI);
                 const compIdB = label_comp_idB.value(residueIndexB[bI]);
                 builder.add(_aI, _bI, {
                     order: getInterBondOrderFromTable(compIdA, compIdB, atomIdA, atomIdB),
-                    flag: (isMetal ? BondType.Flag.MetallicCoordination : BondType.Flag.Covalent) | BondType.Flag.Computed
+                    flag: (isMetal ? BondType.Flag.MetallicCoordination : BondType.Flag.Covalent) | BondType.Flag.Computed,
+                    key: -1
                 });
             }
         }
@@ -176,37 +198,32 @@ function findPairBonds(unitA: Unit.Atomic, unitB: Unit.Atomic, props: BondComput
 }
 
 export interface InterBondComputationProps extends BondComputationProps {
+    validUnit: (unit: Unit) => boolean
     validUnitPair: (structure: Structure, unitA: Unit, unitB: Unit) => boolean
+    ignoreWater: boolean
+    ignoreIon: boolean
 }
+
+const DefaultInterBondComputationProps = {
+    ...DefaultBondComputationProps,
+    ignoreWater: true,
+    ignoreIon: true,
+};
 
 function findBonds(structure: Structure, props: InterBondComputationProps) {
     const builder = new InterUnitGraph.Builder<number, StructureElement.UnitIndex, InterUnitEdgeProps>();
+    const hasIndexPairBonds = structure.models.some(m => IndexPairBonds.Provider.get(m));
+    const hasExhaustiveStructConn = structure.models.some(m => StructConn.isExhaustive(m));
 
-    if (props.noCompute || structure.isCoarseGrained) {
-        // TODO add function that only adds bonds defined in structConn and avoids using
-        //      structure.lookup and unit.lookup (expensive for large structure and not
-        //      needed for archival files or files with an MD topology)
+    if (props.noCompute || (structure.isCoarseGrained && !hasIndexPairBonds && !hasExhaustiveStructConn)) {
         return new InterUnitBonds(builder.getMap());
-    }
-
-    const indexPairs = structure.models.length === 1 && IndexPairBonds.Provider.get(structure.model);
-    if (indexPairs) {
-        const { distance } = indexPairs.edgeProps;
-        let hasDistance = false;
-        for (let i = 0, il = distance.length; i < il; ++i) {
-            if (distance[i] !== -1) {
-                hasDistance = true;
-                break;
-            }
-        }
-        if (!hasDistance) return new InterUnitBonds(builder.getMap());
     }
 
     Structure.eachUnitPair(structure, (unitA: Unit, unitB: Unit) => {
         findPairBonds(unitA as Unit.Atomic, unitB as Unit.Atomic, props, builder);
     }, {
-        maxRadius: MAX_RADIUS,
-        validUnit: (unit: Unit) => Unit.isAtomic(unit),
+        maxRadius: props.maxRadius,
+        validUnit: (unit: Unit) => props.validUnit(unit),
         validUnitPair: (unitA: Unit, unitB: Unit) => props.validUnitPair(structure, unitA, unitB)
     });
 
@@ -214,8 +231,10 @@ function findBonds(structure: Structure, props: InterBondComputationProps) {
 }
 
 function computeInterUnitBonds(structure: Structure, props?: Partial<InterBondComputationProps>): InterUnitBonds {
+    const p = { ...DefaultInterBondComputationProps, ...props };
     return findBonds(structure, {
-        ...DefaultBondComputationProps,
+        ...p,
+        validUnit: (props && props.validUnit) || (u => Unit.isAtomic(u)),
         validUnitPair: (props && props.validUnitPair) || ((s, a, b) => {
             const mtA = a.model.atomicHierarchy.derived.residue.moleculeType;
             const mtB = b.model.atomicHierarchy.derived.residue.moleculeType;
@@ -223,7 +242,11 @@ function computeInterUnitBonds(structure: Structure, props?: Partial<InterBondCo
                 (!Unit.isAtomic(a) || mtA[a.residueIndex[a.elements[0]]] !== MoleculeType.Water) &&
                 (!Unit.isAtomic(b) || mtB[b.residueIndex[b.elements[0]]] !== MoleculeType.Water)
             );
-            return Structure.validUnitPair(s, a, b) && notWater;
+            const notIon = (
+                (!Unit.isAtomic(a) || mtA[a.residueIndex[a.elements[0]]] !== MoleculeType.Ion) &&
+                (!Unit.isAtomic(b) || mtB[b.residueIndex[b.elements[0]]] !== MoleculeType.Ion)
+            );
+            return Structure.validUnitPair(s, a, b) && (notWater || !p.ignoreWater) && (notIon || !p.ignoreIon);
         }),
     });
 }

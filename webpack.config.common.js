@@ -13,6 +13,9 @@ class VersionFilePlugin {
     }
 }
 
+const publicPath = '/';
+const bvbrcWebsitePath = '/Users/mkuscuog/IdeaProjects/bvbrc_website/public/js/molstar';
+
 const sharedConfig = {
     module: {
         rules: [
@@ -25,8 +28,12 @@ const sharedConfig = {
             },
             {
                 test: /\.(s*)css$/,
-                use: [
-                    MiniCssExtractPlugin.loader,
+                use: [{
+                        loader: MiniCssExtractPlugin.loader,
+                        options: {
+                            publicPath: ''
+                        }
+                    },
                     { loader: 'css-loader', options: { sourceMap: false } },
                     { loader: 'sass-loader', options: { sourceMap: false } },
                 ]
@@ -72,7 +79,16 @@ function createEntry(src, outFolder, outFilename, isNode) {
     return {
         target: isNode ? 'node' : void 0,
         entry: path.resolve(__dirname, `lib/${src}.js`),
-        output: { filename: `${outFilename}.js`, path: path.resolve(__dirname, `build/${outFolder}`) },
+        output: { filename: `${outFilename}.js`, path: path.resolve(__dirname, `build/${outFolder}`), publicPath: publicPath },
+        ...sharedConfig
+    };
+}
+
+function createBVBRCEntry(src, outFolder, outFilename, isNode) {
+    return {
+        target: isNode ? 'node' : void 0,
+        entry: path.resolve(__dirname, `lib/${src}.js`),
+        output: { filename: `${outFilename}.js`, path: path.resolve(bvbrcWebsitePath, outFolder), publicPath: publicPath },
         ...sharedConfig
     };
 }
@@ -80,7 +96,7 @@ function createEntry(src, outFolder, outFilename, isNode) {
 function createEntryPoint(name, dir, out, library) {
     return {
         entry: path.resolve(__dirname, `lib/${dir}/${name}.js`),
-        output: { filename: `${library || name}.js`, path: path.resolve(__dirname, `build/${out}`), library: library || out, libraryTarget: 'umd', assetModuleFilename: 'images/[hash][ext][query]', 'publicPath': '' },
+        output: { filename: `${library || name}.js`, path: path.resolve(__dirname, `build/${out}`), library: library || out, libraryTarget: 'umd', assetModuleFilename: 'images/[hash][ext][query]', 'publicPath': publicPath },
         ...sharedConfig
     };
 }
@@ -89,7 +105,7 @@ function createNodeEntryPoint(name, dir, out) {
     return {
         target: 'node',
         entry: path.resolve(__dirname, `lib/${dir}/${name}.js`),
-        output: { filename: `${name}.js`, path: path.resolve(__dirname, `build/${out}`) },
+        output: { filename: `${name}.js`, path: path.resolve(__dirname, `build/${out}`), publicPath: publicPath },
         externals: {
             argparse: 'require("argparse")',
             'node-fetch': 'require("node-fetch")',
@@ -104,6 +120,7 @@ function createApp(name, library) { return createEntryPoint('index', `apps/${nam
 function createExample(name) { return createEntry(`examples/${name}/index`, `examples/${name}`, 'index'); }
 function createBrowserTest(name) { return createEntryPoint(name, 'tests/browser', 'tests'); }
 function createNodeApp(name) { return createNodeEntryPoint('index', `apps/${name}`, name); }
+function createBVBRC(name) { return createBVBRCEntry(`${name}/index`, `${name}`, 'index'); }
 
 module.exports = {
     createApp,
@@ -111,5 +128,6 @@ module.exports = {
     createExample,
     createBrowserTest,
     createNodeEntryPoint,
-    createNodeApp
+    createNodeApp,
+    createBVBRC
 };

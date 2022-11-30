@@ -22,6 +22,7 @@ const simpleRegionStateOptions = [
 export type PluginLayoutControlsDisplay = 'outside' | 'portrait' | 'landscape' | 'reactive'
 export const PluginLayoutStateParams = {
     isExpanded: PD.Boolean(false),
+    isSpinning: PD.Boolean(false),
     showControls: PD.Boolean(true),
     regionState: PD.Group({
         left: PD.Select('full', regionStateOptions),

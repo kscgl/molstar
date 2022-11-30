@@ -5,8 +5,8 @@
  */
 
 import { PDBeStructureQualityReport } from '../../extensions/pdbe';
-import {EmptyLoci, Loci} from '../../mol-model/loci';
-import {Structure, StructureElement, StructureSelection} from '../../mol-model/structure';
+import { EmptyLoci, Loci } from '../../mol-model/loci';
+import { Structure, StructureElement, StructureSelection } from '../../mol-model/structure';
 import { AnimateModelIndex } from '../../mol-plugin-state/animation/built-in/model-index';
 import { BuiltInTrajectoryFormat } from '../../mol-plugin-state/formats/trajectory';
 import { createPluginUI } from '../../mol-plugin-ui';
@@ -21,16 +21,16 @@ import { CustomToastMessage } from './controls';
 import { CustomColorThemeProvider } from './custom-theme';
 import './index.html';
 import { buildStaticSuperposition, dynamicSuperpositionTest, StaticSuperpositionTestData } from './superposition';
-import {DefaultColorSwatch} from '../../mol-util/color/swatches';
-import {Overpaint} from '../../mol-theme/overpaint';
-import {StateTransforms} from '../../mol-plugin-state/transforms';
+import { DefaultColorSwatch } from '../../mol-util/color/swatches';
+import { Overpaint } from '../../mol-theme/overpaint';
+import { StateTransforms } from '../../mol-plugin-state/transforms';
 require('mol-plugin-ui/skin/light.scss');
-import {featureDataString} from './sars2-features';
-import {Canvas3DProps} from '../../mol-canvas3d/canvas3d';
+import { featureDataString } from './sars2-features';
+import { Canvas3DProps } from '../../mol-canvas3d/canvas3d';
 import { PluginStateObject } from '../../mol-plugin-state/objects';
 import { StateObjectSelector, StateTransformer, StateObject } from '../../mol-state';
-import {SetUtils} from '../../mol-util/set';
-import {AminoAcidNamesL, DnaBaseNames, RnaBaseNames, WaterNames} from '../../mol-model/structure/model/types';
+import { SetUtils } from '../../mol-util/set';
+import { AminoAcidNamesL, DnaBaseNames, RnaBaseNames, WaterNames } from '../../mol-model/structure/model/types';
 
 type LoadParams = { url: string, format?: BuiltInTrajectoryFormat, isBinary?: boolean, assemblyId?: string, selection?: string, displaySpikeSequence?: boolean }
 type HeatMapData = { seq: string, vol: number };
@@ -43,7 +43,7 @@ const Canvas3DPresets = {
         canvas3d: <Preset>{
             postprocessing: {
                 occlusion: { name: 'on', params: { samples: 32, radius: 6, bias: 1.4, blurKernelSize: 15, resolutionScale: 1 } },
-                /*outline: { name: 'on', params: { scale: 1, threshold: 0.33, color: Color(0x000000) } }*/
+                /* outline: { name: 'on', params: { scale: 1, threshold: 0.33, color: Color(0x000000) } }*/
             },
             renderer: {
                 ambientIntensity: 1.0,
@@ -114,7 +114,7 @@ class BVBRCMolStarWrapper {
         this.plugin.customModelProperties.register(StripedResidues.propertyProvider, true);
     }
 
-    async load({ url, format = 'mmcif', isBinary = false, assemblyId = '', selection = '', displaySpikeSequence = false}: LoadParams) {
+    async load({ url, format = 'mmcif', isBinary = false, assemblyId = '', selection = '', displaySpikeSequence = false }: LoadParams) {
         await this.plugin.clear();
 
         const data = await this.plugin.builders.data.download({ url: Asset.Url(url), isBinary }, { state: { isGhost: true } });
@@ -156,7 +156,7 @@ class BVBRCMolStarWrapper {
                 ...this.plugin.canvas3d!.props.postprocessing,
                 ...props.canvas3d.postprocessing
             },
-        }});
+        } });
 
 
         /* const objData = this.plugin.managers.structure.hierarchy.current.structures[0]?.cell.obj?.data;
@@ -205,9 +205,9 @@ class BVBRCMolStarWrapper {
         await this.coloring.applyDefault();
 
         if (displaySpikeSequence) {
-            let selectElements = document.getElementsByTagName('select');
-            for (let selectElement of selectElements as any) {
-                let title = selectElement.getAttribute('title');
+            const selectElements = document.getElementsByTagName('select');
+            for (const selectElement of selectElements as any) {
+                const title = selectElement.getAttribute('title');
                 if (title && title.startsWith('[Entity]')) {
                     // Looking for spike protein option
                     // @ts-ignore
@@ -215,7 +215,7 @@ class BVBRCMolStarWrapper {
 
                     if (spikeOption && spikeOption.value) {
                         selectElement.value = spikeOption.value;
-                        selectElement.dispatchEvent(new Event('change', {bubbles: true}));
+                        selectElement.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                 }
             }
@@ -258,7 +258,7 @@ class BVBRCMolStarWrapper {
             loop: () => { this.plugin.managers.animation.play(AnimateModelIndex, { duration: { name: 'computed', params: { targetFps: this.animateModelIndexTargetFps() } }, mode: { name: 'loop', params: { direction: 'forward' } } }); },
             stop: () => this.plugin.managers.animation.stop()
         }
-    }
+    };
 
     coloring = {
         applyStripes: async () => {
@@ -284,27 +284,28 @@ class BVBRCMolStarWrapper {
         },
         applyHeatMap: async (url: string) => {
             console.log('TEST2 ');
-            let heatMapData = new Array<HeatMapData>(), minValue: number = 0, maxValue: number = 0;
+            const heatMapData = new Array<HeatMapData>();
+            let minValue: number = 0, maxValue: number = 0;
             fetch(url).then(response => {
-                if(response.ok) {
+                if (response.ok) {
                     response.text().then(data => {
-                        for(let line of data.split('\n')) {
+                        for (const line of data.split('\n')) {
                             const columns = line.split('\t');
                             const seq = columns[0];
                             const vol = parseFloat(columns[1]);
 
-                            if(vol < minValue)
+                            if (vol < minValue)
                                 minValue = vol;
-                            if(vol > maxValue)
+                            if (vol > maxValue)
                                 maxValue = vol;
 
-                            heatMapData.push({seq, vol});
+                            heatMapData.push({ seq, vol });
                         }
 
                         // @ts-ignore
-                        let overPaint: [OverPaintData] = [];
-                        for (let {seq, vol} of heatMapData) {
-                            overPaint.push({seq, color: this.coloring.numberToColorNew(seq, vol, minValue, maxValue)});
+                        const overPaint: [OverPaintData] = [];
+                        for (const { seq, vol } of heatMapData) {
+                            overPaint.push({ seq, color: this.coloring.numberToColorNew(seq, vol, minValue, maxValue) });
                         }
                         this.coloring.applyOverPaint(overPaint, '', false, true);
                     });
@@ -318,7 +319,7 @@ class BVBRCMolStarWrapper {
             const percentColors = [
                 { pct: 0.0, color: { r: 0xff, g: 0x00, b: 0x00 } },
                 { pct: 0.5, color: { r: 0xff, g: 0xff, b: 0xff } },
-                { pct: 1.0, color: { r: 0x00, g: 0x00, b: 0xff } } ];
+                { pct: 1.0, color: { r: 0x00, g: 0x00, b: 0xff } }];
             /* const maxMinDiff = max - min;
             const diff = value - min;
             const pct = diff / maxMinDiff;*/
@@ -330,13 +331,13 @@ class BVBRCMolStarWrapper {
             }
             // let lower = percentColors[i - 1];
             // let upper = percentColors[i];
-            let lower = percentColors[1];
-            let upper = percentColors[0];
-            let range = upper.pct - lower.pct;
-            let rangePct = (pct - lower.pct) / range;
-            let pctLower = 1 - rangePct;
-            let pctUpper = rangePct;
-            let color = {
+            const lower = percentColors[1];
+            const upper = percentColors[0];
+            const range = upper.pct - lower.pct;
+            const rangePct = (pct - lower.pct) / range;
+            const pctLower = 1 - rangePct;
+            const pctUpper = rangePct;
+            const color = {
                 r: Math.floor(lower.color.r * pctLower + upper.color.r * pctUpper),
                 g: Math.floor(lower.color.g * pctLower + upper.color.g * pctUpper),
                 b: Math.floor(lower.color.b * pctLower + upper.color.b * pctUpper)
@@ -364,10 +365,10 @@ class BVBRCMolStarWrapper {
 
             // as the function expects a value between 0 and 1, and red = 0° and green = 120°
             // we convert the input to the appropriate hue value
-            let hue = ratio * 1.2 / 3.60;
+            const hue = ratio * 1.2 / 3.60;
 
             // we convert hsl to rgb (saturation 100%, lightness 50%)
-            let rgb = this.coloring.hslToRgb(hue * 2, 1, .5);
+            const rgb = this.coloring.hslToRgb(hue * 2, 1, .5);
             // we format to css value and return
             console.log(`seq: ${seq} hue: ${hue} number: ${i} min: ${min} max: ${max} ratio: ${ratio} rgb(${rgb[0]},${rgb[1]},${rgb[2]})`);
             return parseInt(('#' + this.coloring.componentToHex(rgb[0]) + this.coloring.componentToHex(rgb[1]) + this.coloring.componentToHex(rgb[2]))
@@ -380,11 +381,11 @@ class BVBRCMolStarWrapper {
         hslToRgb: (h: number, s: number, l: number) => {
             let r, g, b;
 
-            if(s === 0){
+            if (s === 0) {
                 r = g = b = l; // achromatic
             } else {
-                let q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-                let p = 2 * l - q;
+                const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                const p = 2 * l - q;
                 r = this.coloring.hue2rgb(p, q, h + 1 / 3);
                 g = this.coloring.hue2rgb(p, q, h);
                 b = this.coloring.hue2rgb(p, q, h - 1 / 3);
@@ -393,11 +394,11 @@ class BVBRCMolStarWrapper {
             return [Math.floor(r * 255), Math.floor(g * 255), Math.floor(b * 255)];
         },
         hue2rgb: (p: number, q: number, t: number) => {
-            if(t < 0) t += 1;
-            if(t > 1) t -= 1;
-            if(t < 1 / 6) return p + (q - p) * 6 * t;
-            if(t < 1 / 2) return q;
-            if(t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+            if (t < 0) t += 1;
+            if (t > 1) t -= 1;
+            if (t < 1 / 6) return p + (q - p) * 6 * t;
+            if (t < 1 / 2) return q;
+            if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
             return p;
         },
         clearOverPaint: async (clearCanvas = false) => {
@@ -412,20 +413,20 @@ class BVBRCMolStarWrapper {
                         for (const r of c.representations) {
                             update.to(r.cell.transform.ref)
                                 .apply(StateTransforms.Representation.OverpaintStructureRepresentation3DFromBundle,
-                                    Overpaint.toBundle({layers: []}),
-                                    {tags: 'overpaint-controls'});
+                                    Overpaint.toBundle({ layers: [] }),
+                                    { tags: 'overpaint-controls' });
                         }
                     }
                 }
                 await update.commit();
             }
 
-            if(this.polymerSelector) {
-                PluginCommands.State.RemoveObject(this.plugin, {state: this.plugin.state.data, ref: this.polymerSelector.ref});
+            if (this.polymerSelector) {
+                PluginCommands.State.RemoveObject(this.plugin, { state: this.plugin.state.data, ref: this.polymerSelector.ref });
             }
 
-            if(this.ligandSelector) {
-                PluginCommands.State.RemoveObject(this.plugin, {state: this.plugin.state.data, ref: this.ligandSelector.ref});
+            if (this.ligandSelector) {
+                PluginCommands.State.RemoveObject(this.plugin, { state: this.plugin.state.data, ref: this.ligandSelector.ref });
             }
         },
         applyLigand: async (color: number) => {
@@ -466,7 +467,7 @@ class BVBRCMolStarWrapper {
                                 clear: false
                             };
 
-                            //this.plugin.managers.interactivity.lociSelects.select({ loci }, true, Color(color), false);
+                            // this.plugin.managers.interactivity.lociSelects.select({ loci }, true, Color(color), false);
 
                             const overpaint = Overpaint.ofBundle([layer], structure.root);
                             const merged = Overpaint.merge(overpaint);
@@ -474,7 +475,7 @@ class BVBRCMolStarWrapper {
                             update.to(repr.transform.ref)
                                 .apply(StateTransforms.Representation.OverpaintStructureRepresentation3DFromBundle,
                                     Overpaint.toBundle(filtered),
-                                    {tags: 'overpaint-controls'});
+                                    { tags: 'overpaint-controls' });
                         }
                     }
                 }
@@ -499,7 +500,7 @@ class BVBRCMolStarWrapper {
                     if (this.components.ligand) this.ligandSelector = await this.plugin.builders.structure.representation.addRepresentation(this.components.ligand, {
                         type: 'ball-and-stick',
                         color: 'element-symbol',
-                        colorParams: {carbonColor: {name: 'element-symbol', params: {}}}
+                        colorParams: { carbonColor: { name: 'element-symbol', params: {} } }
                     });
 
                     const props = Canvas3DPresets['occlusion'];
@@ -521,12 +522,12 @@ class BVBRCMolStarWrapper {
                 const state = this.plugin.state.data;
                 const update = state.build();
 
-                let lociArr = [];
-                for (let sequence of sequences) {
+                const lociArr = [];
+                for (const sequence of sequences) {
                     const seq = sequence.seq;
 
-                    let list: number[] = [];
-                    for (let id of seq.split(',')) {
+                    const list: number[] = [];
+                    for (const id of seq.split(',')) {
                         if (id.includes('-')) {
                             const idArr = id.split('-');
                             for (let i = parseInt(idArr[0]); i <= parseInt(idArr[1]); i++) {
@@ -548,7 +549,7 @@ class BVBRCMolStarWrapper {
 
                     const lociGetter = async (s: Structure) => StructureSelection.toLociWithSourceUnits(sel);
 
-                    lociArr.push({lociGetter: lociGetter, color: sequence.color});
+                    lociArr.push({ lociGetter: lociGetter, color: sequence.color });
                 }
 
                 // Add ligand coordinates and color if selected
@@ -563,7 +564,7 @@ class BVBRCMolStarWrapper {
 
                     const lociGetter = async (s: Structure) => StructureSelection.toLociWithSourceUnits(ligand);
 
-                    lociArr.push({lociGetter: lociGetter, color: parseInt(ligandColor)});
+                    lociArr.push({ lociGetter: lociGetter, color: parseInt(ligandColor) });
                 }
 
                 for (const s of this.plugin.managers.structure.hierarchy.current.structures) {
@@ -576,8 +577,8 @@ class BVBRCMolStarWrapper {
 
                             const structure = repr.obj!.data.sourceData;
 
-                            let layers = [];
-                            for (let l of lociArr) {
+                            const layers = [];
+                            for (const l of lociArr) {
                                 const lociGetter = l.lociGetter;
                                 const color = l.color;
 
@@ -593,7 +594,7 @@ class BVBRCMolStarWrapper {
                                     layers.push(layer);
                                 }
 
-                                //this.plugin.managers.interactivity.lociSelects.select({ loci }, true, Color(color), true);
+                                // this.plugin.managers.interactivity.lociSelects.select({ loci }, true, Color(color), true);
                             }
 
                             // this.plugin.managers.structure.selection.fromLoci('add', loci, true, Color(color));
@@ -606,7 +607,7 @@ class BVBRCMolStarWrapper {
                             update.to(repr.transform.ref)
                                 .apply(StateTransforms.Representation.OverpaintStructureRepresentation3DFromBundle,
                                     Overpaint.toBundle(filtered),
-                                    {tags: 'overpaint-controls'});
+                                    { tags: 'overpaint-controls' });
 
                             // this.plugin.managers.structure.selection.modify('add', loci);
                             // this.plugin.managers.structure.focus.addFromLoci(loci);
@@ -617,7 +618,7 @@ class BVBRCMolStarWrapper {
                 return update.commit();
             });
         }
-    }
+    };
 
     interactivity = {
         highlightOn: (seq: string) => {
@@ -645,7 +646,7 @@ class BVBRCMolStarWrapper {
         clearHighlight: () => {
             this.plugin.managers.interactivity.lociHighlights.highlightOnly({ loci: EmptyLoci });
         }
-    }
+    };
 
     tests = {
         staticSuperposition: async () => {
@@ -676,7 +677,7 @@ class BVBRCMolStarWrapper {
             PluginCommands.Toast.Hide(this.plugin, { key: 'toast-1' });
             PluginCommands.Toast.Hide(this.plugin, { key: 'toast-2' });
         }
-    }
+    };
 }
 
 (window as any).BVBRCMolStarWrapper = new BVBRCMolStarWrapper();

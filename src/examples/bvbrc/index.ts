@@ -1,42 +1,51 @@
-/**
- * Copyright (c) 2019 mol* contributors, licensed under MIT, See LICENSE file for more info.
- *
- * @author David Sehnal <david.sehnal@gmail.com>
- */
-
+import { ANVILMembraneOrientation } from '../../extensions/anvil/behavior';
+import { CellPack } from '../../extensions/cellpack';
+import { DnatcoConfalPyramids } from '../../extensions/dnatco';
+import { G3DFormat, G3dProvider } from '../../extensions/g3d/format';
+import { GeometryExport } from '../../extensions/geo-export';
+import { MAQualityAssessment } from '../../extensions/model-archive/quality-assessment/behavior';
+import { QualityAssessmentPLDDTPreset, QualityAssessmentQmeanPreset } from '../../extensions/model-archive/quality-assessment/behavior';
+import { QualityAssessment } from '../../extensions/model-archive/quality-assessment/prop';
+import { ModelExport } from '../../extensions/model-export';
+import { Mp4Export } from '../../extensions/mp4-export';
 import { PDBeStructureQualityReport } from '../../extensions/pdbe';
-import { EmptyLoci, Loci } from '../../mol-model/loci';
-import { Structure, StructureElement, StructureSelection } from '../../mol-model/structure';
-import { AnimateModelIndex } from '../../mol-plugin-state/animation/built-in/model-index';
+import { RCSBAssemblySymmetry, RCSBValidationReport } from '../../extensions/rcsb';
+import { ZenodoImport } from '../../extensions/zenodo';
+import { DownloadStructure } from '../../mol-plugin-state/actions/structure';
+import { PresetTrajectoryHierarchy } from '../../mol-plugin-state/builder/structure/hierarchy-preset';
+import { PresetStructureRepresentations, StructureRepresentationPresetProvider } from '../../mol-plugin-state/builder/structure/representation-preset';
+import { DataFormatProvider } from '../../mol-plugin-state/formats/provider';
+import { BuiltInTopologyFormat } from '../../mol-plugin-state/formats/topology';
+import { BuiltInCoordinatesFormat } from '../../mol-plugin-state/formats/coordinates';
 import { BuiltInTrajectoryFormat } from '../../mol-plugin-state/formats/trajectory';
-import { createPluginUI } from '../../mol-plugin-ui';
+import { createPluginUI } from '../../mol-plugin-ui/react18';
 import { PluginUIContext } from '../../mol-plugin-ui/context';
-import { DefaultPluginUISpec } from '../../mol-plugin-ui/spec';
+import { DefaultPluginUISpec, PluginUISpec } from '../../mol-plugin-ui/spec';
 import { PluginCommands } from '../../mol-plugin/commands';
-import { Script } from '../../mol-script/script';
+import { PluginConfig } from '../../mol-plugin/config';
+import { PluginLayoutControlsDisplay } from '../../mol-plugin/layout';
+import { PluginSpec } from '../../mol-plugin/spec';
+import { StateObjectRef } from '../../mol-state';
 import { Asset } from '../../mol-util/assets';
 import { Color } from '../../mol-util/color';
-import { StripedResidues } from './coloring';
-import { CustomToastMessage } from './controls';
-import { CustomColorThemeProvider } from './custom-theme';
-import './index.html';
-import { buildStaticSuperposition, dynamicSuperpositionTest, StaticSuperpositionTestData } from './superposition';
-import { DefaultColorSwatch } from '../../mol-util/color/swatches';
-import { Overpaint } from '../../mol-theme/overpaint';
-import { StateTransforms } from '../../mol-plugin-state/transforms';
-require('mol-plugin-ui/skin/light.scss');
-import { featureDataString } from './sars2-features';
+import '../../mol-util/polyfill';
+import { ObjectKeys } from '../../mol-util/type-helpers';
+import { SaccharideCompIdMapType } from '../../mol-model/structure/structure/carbohydrates/constants';
+import { Backgrounds } from '../../extensions/backgrounds';
 import { Canvas3DProps } from '../../mol-canvas3d/canvas3d';
-import { PluginStateObject } from '../../mol-plugin-state/objects';
-import { StateObjectSelector, StateTransformer, StateObject } from '../../mol-state';
-import { SetUtils } from '../../mol-util/set';
-import { AminoAcidNamesL, DnaBaseNames, RnaBaseNames, WaterNames } from '../../mol-model/structure/model/types';
+import { DefaultColorSwatch } from '../../mol-util/color/swatches';
+import { featureDataString } from './sars2-features';
 
-type LoadParams = { url: string, format?: BuiltInTrajectoryFormat, isBinary?: boolean, assemblyId?: string, selection?: string, displaySpikeSequence?: boolean }
-type HeatMapData = { seq: string, vol: number };
-type OverPaintData = { seq: string, color: number };
+export { PLUGIN_VERSION as version } from '../../mol-plugin/version';
+export { setDebugMode, setProductionMode, setTimingMode } from '../../mol-util/debug';
+
+type LoadParams = { url: string, format?: BuiltInTrajectoryFormat, isBinary?: boolean, assemblyId?: string, selection?: string, displaySpikeSequence?: boolean, label?: string }
 type _Preset = Pick<Canvas3DProps, 'postprocessing' | 'renderer'>
 type Preset = { [K in keyof _Preset]: Partial<_Preset[K]> }
+
+const CustomFormats = [
+    ['g3d', G3dProvider] as const
+];
 
 const Canvas3DPresets = {
     illustrative: {
@@ -79,128 +88,176 @@ const Canvas3DPresets = {
     }
 };
 
+const Extensions = {
+    'backgrounds': PluginSpec.Behavior(Backgrounds),
+    'cellpack': PluginSpec.Behavior(CellPack),
+    'dnatco-confal-pyramids': PluginSpec.Behavior(DnatcoConfalPyramids),
+    'pdbe-structure-quality-report': PluginSpec.Behavior(PDBeStructureQualityReport),
+    'rcsb-assembly-symmetry': PluginSpec.Behavior(RCSBAssemblySymmetry),
+    'rcsb-validation-report': PluginSpec.Behavior(RCSBValidationReport),
+    'anvil-membrane-orientation': PluginSpec.Behavior(ANVILMembraneOrientation),
+    'g3d': PluginSpec.Behavior(G3DFormat),
+    'model-export': PluginSpec.Behavior(ModelExport),
+    'mp4-export': PluginSpec.Behavior(Mp4Export),
+    'geo-export': PluginSpec.Behavior(GeometryExport),
+    'ma-quality-assessment': PluginSpec.Behavior(MAQualityAssessment),
+    'zenodo-import': PluginSpec.Behavior(ZenodoImport),
+};
+
+const DefaultViewerOptions = {
+    customFormats: CustomFormats as [string, DataFormatProvider][],
+    extensions: ObjectKeys(Extensions),
+    layoutIsExpanded: true,
+    layoutShowControls: true,
+    layoutShowRemoteState: false,
+    layoutControlsDisplay: 'reactive' as PluginLayoutControlsDisplay,
+    layoutShowSequence: true,
+    layoutShowLog: true,
+    layoutShowLeftPanel: true,
+    hideLeftPanel: true,
+    collapseLeftPanel: true,
+    collapseRightPanel: false,
+    disableAntialiasing: PluginConfig.General.DisableAntialiasing.defaultValue,
+    pixelScale: PluginConfig.General.PixelScale.defaultValue,
+    pickScale: PluginConfig.General.PickScale.defaultValue,
+    pickPadding: PluginConfig.General.PickPadding.defaultValue,
+    enableWboit: PluginConfig.General.EnableWboit.defaultValue,
+    enableDpoit: PluginConfig.General.EnableDpoit.defaultValue,
+    preferWebgl1: PluginConfig.General.PreferWebGl1.defaultValue,
+    allowMajorPerformanceCaveat: PluginConfig.General.AllowMajorPerformanceCaveat.defaultValue,
+
+    viewportShowExpand: PluginConfig.Viewport.ShowExpand.defaultValue,
+    viewportShowControls: PluginConfig.Viewport.ShowControls.defaultValue,
+    viewportShowSettings: PluginConfig.Viewport.ShowSettings.defaultValue,
+    viewportShowSelectionMode: PluginConfig.Viewport.ShowSelectionMode.defaultValue,
+    viewportShowAnimation: PluginConfig.Viewport.ShowAnimation.defaultValue,
+    viewportShowTrajectoryControls: PluginConfig.Viewport.ShowTrajectoryControls.defaultValue,
+    pluginStateServer: PluginConfig.State.DefaultServer.defaultValue,
+    volumeStreamingServer: PluginConfig.VolumeStreaming.DefaultServer.defaultValue,
+    volumeStreamingDisabled: !PluginConfig.VolumeStreaming.Enabled.defaultValue,
+    pdbProvider: PluginConfig.Download.DefaultPdbProvider.defaultValue,
+    emdbProvider: PluginConfig.Download.DefaultEmdbProvider.defaultValue,
+    saccharideCompIdMapType: 'default' as SaccharideCompIdMapType,
+};
+type ViewerOptions = typeof DefaultViewerOptions;
+
 class BVBRCMolStarWrapper {
     defaultColors = DefaultColorSwatch;
     featureData = featureDataString;
 
     plugin: PluginUIContext;
-    components: { polymer: StateObjectSelector<PluginStateObject.Molecule.Structure, StateTransformer<StateObject<any, StateObject.Type<any>>, StateObject<any, StateObject.Type<any>>, any>> | undefined; ligand: StateObjectSelector<PluginStateObject.Molecule.Structure, StateTransformer<StateObject<any, StateObject.Type<any>>, StateObject<any, StateObject.Type<any>>, any>> | undefined; water: StateObjectSelector<PluginStateObject.Molecule.Structure, StateTransformer<StateObject<any, StateObject.Type<any>>, StateObject<any, StateObject.Type<any>>, any>> | undefined; };
-    private polymerSelector: StateObjectSelector<PluginStateObject.Molecule.Structure.Representation3D>;
-    private ligandSelector: StateObjectSelector<PluginStateObject.Molecule.Structure.Representation3D>;
 
-    async init(target: string | HTMLElement) {
-        this.plugin = await createPluginUI(typeof target === 'string' ? document.getElementById(target)! : target, {
-            ...DefaultPluginUISpec(),
+    async init(elementOrId: string | HTMLElement, options: Partial<ViewerOptions> = {}) {
+        const definedOptions = {} as any;
+        // filter for defined properies only so the default values
+        // are property applied
+        for (const p of Object.keys(options) as (keyof ViewerOptions)[]) {
+            if (options[p] !== void 0) definedOptions[p] = options[p];
+        }
+
+        const o: ViewerOptions = { ...DefaultViewerOptions, ...definedOptions };
+        const defaultSpec = DefaultPluginUISpec();
+
+        const spec: PluginUISpec = {
+            actions: defaultSpec.actions,
+            behaviors: [
+                ...defaultSpec.behaviors,
+                ...o.extensions.map(e => Extensions[e]),
+            ],
+            animations: [...defaultSpec.animations || []],
+            customParamEditors: defaultSpec.customParamEditors,
+            customFormats: o?.customFormats,
             layout: {
                 initial: {
-                    isExpanded: true,
-                    showControls: true,
+                    isExpanded: o.layoutIsExpanded,
+                    showControls: o.layoutShowControls,
+                    controlsDisplay: o.layoutControlsDisplay,
                     regionState: {
                         bottom: 'full',
-                        left: 'collapsed',
-                        right: 'full',
+                        left: o.hideLeftPanel ? 'hidden' : o.collapseLeftPanel ? 'collapsed' : 'full',
+                        right: o.collapseRightPanel ? 'hidden' : 'full',
                         top: 'full',
                     }
-                }
+                },
             },
             components: {
-                remoteState: 'none',
-            }
-        });
-
-        this.plugin.representation.structure.themes.colorThemeRegistry.add(StripedResidues.colorThemeProvider!);
-        this.plugin.representation.structure.themes.colorThemeRegistry.add(CustomColorThemeProvider);
-        this.plugin.managers.lociLabels.addProvider(StripedResidues.labelProvider!);
-        this.plugin.customModelProperties.register(StripedResidues.propertyProvider, true);
-    }
-
-    async load({ url, format = 'mmcif', isBinary = false, assemblyId = '', selection = '', displaySpikeSequence = false }: LoadParams) {
-        await this.plugin.clear();
-
-        const data = await this.plugin.builders.data.download({ url: Asset.Url(url), isBinary }, { state: { isGhost: true } });
-        const trajectory = await this.plugin.builders.structure.parseTrajectory(data, format);
-        const model = await this.plugin.builders.structure.createModel(trajectory);
-        const structure = await this.plugin.builders.structure.createStructure(model);
-
-        this.plugin.build();
-
-        await this.plugin.builders.structure.hierarchy.applyPreset(trajectory, 'default', {
-            structure: assemblyId ? {
-                name: 'assembly',
-                params: { id: assemblyId }
-            } : {
-                name: 'model',
-                params: {}
+                ...defaultSpec.components,
+                controls: {
+                    ...defaultSpec.components?.controls,
+                    top: o.layoutShowSequence ? undefined : 'none',
+                    bottom: o.layoutShowLog ? undefined : 'none',
+                    left: o.layoutShowLeftPanel ? undefined : 'none',
+                },
+                remoteState: o.layoutShowRemoteState ? 'default' : 'none',
             },
-            showUnitcell: false,
-            representationPreset: 'auto'
-        });
-
-        await this.plugin.builders.structure.representation.applyPreset(structure, 'polymer-and-ligand');
-        /* const structure = await this.plugin.builders.structure.createStructure(model, assemblyId ? { name: 'assembly', params: { id: assemblyId } } : { name: 'model', params: { } });*/
-
-        this.components = {
-            polymer: await this.plugin.builders.structure.tryCreateComponentStatic(structure, 'polymer'),
-            ligand: await this.plugin.builders.structure.tryCreateComponentStatic(structure, 'ligand'),
-            water: await this.plugin.builders.structure.tryCreateComponentStatic(structure, 'water'),
+            config: [
+                [PluginConfig.General.DisableAntialiasing, o.disableAntialiasing],
+                [PluginConfig.General.PixelScale, o.pixelScale],
+                [PluginConfig.General.PickScale, o.pickScale],
+                [PluginConfig.General.PickPadding, o.pickPadding],
+                [PluginConfig.General.EnableWboit, o.enableWboit],
+                [PluginConfig.General.EnableDpoit, o.enableDpoit],
+                [PluginConfig.General.PreferWebGl1, o.preferWebgl1],
+                [PluginConfig.General.AllowMajorPerformanceCaveat, o.allowMajorPerformanceCaveat],
+                [PluginConfig.Viewport.ShowExpand, o.viewportShowExpand],
+                [PluginConfig.Viewport.ShowControls, o.viewportShowControls],
+                [PluginConfig.Viewport.ShowSettings, o.viewportShowSettings],
+                [PluginConfig.Viewport.ShowSelectionMode, o.viewportShowSelectionMode],
+                [PluginConfig.Viewport.ShowAnimation, o.viewportShowAnimation],
+                [PluginConfig.Viewport.ShowTrajectoryControls, o.viewportShowTrajectoryControls],
+                [PluginConfig.State.DefaultServer, o.pluginStateServer],
+                [PluginConfig.State.CurrentServer, o.pluginStateServer],
+                [PluginConfig.VolumeStreaming.DefaultServer, o.volumeStreamingServer],
+                [PluginConfig.VolumeStreaming.Enabled, !o.volumeStreamingDisabled],
+                [PluginConfig.Download.DefaultPdbProvider, o.pdbProvider],
+                [PluginConfig.Download.DefaultEmdbProvider, o.emdbProvider],
+                [PluginConfig.Structure.DefaultRepresentationPreset, ViewerAutoPreset.id],
+                [PluginConfig.Structure.SaccharideCompIdMapType, o.saccharideCompIdMapType],
+            ]
         };
 
+        const element = typeof elementOrId === 'string'
+            ? document.getElementById(elementOrId)
+            : elementOrId;
+        if (!element) throw new Error(`Could not get element with id '${elementOrId}'`);
+        this.plugin = await createPluginUI(element, spec, {
+            onBeforeUIRender: plugin => {
+                // the preset needs to be added before the UI renders otherwise
+                // "Download Structure" wont be able to pick it up
+                plugin.builders.structure.representation.registerPreset(ViewerAutoPreset);
+            }
+        });
+    }
+
+    async load({ url, format = 'mmcif', isBinary = false, displaySpikeSequence = false, label }: LoadParams) {
+        const params = DownloadStructure.createDefaultParams(this.plugin.state.data.root.obj!, this.plugin);
+        await this.plugin.runTask(this.plugin.state.data.applyAction(DownloadStructure, {
+            source: {
+                name: 'url',
+                params: {
+                    url: Asset.Url(url),
+                    format: format as any,
+                    isBinary,
+                    label: label,
+                    options: { ...params.source.params.options },
+                }
+            }
+        }));
+
         const props = Canvas3DPresets['occlusion'];
-        PluginCommands.Canvas3D.SetSettings(this.plugin, { settings: {
-            ...props,
-            renderer: {
-                ...this.plugin.canvas3d!.props.renderer,
-                ...props.canvas3d.renderer
-            },
-            postprocessing: {
-                ...this.plugin.canvas3d!.props.postprocessing,
-                ...props.canvas3d.postprocessing
-            },
-        } });
-
-
-        /* const objData = this.plugin.managers.structure.hierarchy.current.structures[0]?.cell.obj?.data;
-
-        if(objData) {
-            const sel = Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
-                'residue-test': Q.core.set.has([Q.set([3, 5]), Q.ammp('auth_seq_id')])
-            }), objData);
-            console.log('SELECTION:::', sel);
-            const lociGetter = StructureSelection.toLociWithSourceUnits(sel);
-            console.log('lociGetter:::', lociGetter);
-        }*/
-
-        if (selection && selection !== '') {
-            this.interactivity.highlightOn(selection);
-            /* const ligand = MS.struct.generator.atomGroups({
-                'residue-test': MS.core.rel.eq([MS.struct.atomProperty.macromolecular.label_comp_id(), selection]),
-            });
-
-            update.to(structure)
-                .apply(StateTransforms.Model.StructureSelectionFromExpression, { label: 'Surroundings', expression: ligand })
-                .apply(StateTransforms.Representation.StructureRepresentation3D, createStructureRepresentationParams(this.plugin, structure.data, {
-                    type: 'ball-and-stick',
-                    color: 'uniform',
-                    colorParams: { value: ColorNames.aliceblue }
-                }));
-
-            await update.commit();*/
-
-            /* let update = this.plugin.state.behaviors.build();
-            let assembly = this.plugin.state.behaviors.select(StateSelection.Generators.ofType(PluginStateObject.Molecule.Structure))[0]
-            let obj = assembly.obj as PluginStateObject.Molecule.Structure
-
-            const group = update.to(assembly)
-                .group(StateTransforms.Misc.CreateGroup, { label: 'Surroundings' }, { ref: 'TEST' })
-
-            group.apply(StateTransforms.Model.StructureSelectionFromExpression, { label: 'Surroundings', expression: ligand })
-                .apply(StateTransforms.Representation.StructureRepresentation3D, createStructureRepresentationParams(this.plugin, obj.data, {
-                    type: 'label',
-                    typeParams: {level: 'residue'}
-                }), { tags: ['labely'] })
-
-            await PluginCommands.State.Update(this.plugin, {state: this.plugin.state.data, tree: update})*/
-        }
+        await PluginCommands.Canvas3D.SetSettings(this.plugin, {
+            settings: {
+                ...props,
+                renderer: {
+                    ...this.plugin.canvas3d!.props.renderer,
+                    ...props.canvas3d.renderer
+                },
+                postprocessing: {
+                    ...this.plugin.canvas3d!.props.postprocessing,
+                    ...props.canvas3d.postprocessing
+                },
+            }
+        });
 
         await this.coloring.applyDefault();
 
@@ -222,462 +279,71 @@ class BVBRCMolStarWrapper {
         }
     }
 
-    setBackground(color: number) {
-        PluginCommands.Canvas3D.SetSettings(this.plugin, { settings: props => { props.renderer.backgroundColor = Color(color); } });
-    }
-
-    toggleSpin() {
-        if (!this.plugin.canvas3d) return;
-
-        const trackball = this.plugin.canvas3d.props.trackball;
-        PluginCommands.Canvas3D.SetSettings(this.plugin, {
-            settings: {
-                trackball: {
-                    ...trackball,
-                    animate: trackball.animate.name === 'spin'
-                        ? { name: 'off', params: {} }
-                        : { name: 'spin', params: { speed: 1 } }
-                }
-            }
-        });
-        if (this.plugin.canvas3d.props.trackball.animate.name !== 'spin') {
-            PluginCommands.Camera.Reset(this.plugin, {});
-        }
-    }
-
-    private animateModelIndexTargetFps() {
-        return Math.max(1, this.animate.modelIndex.targetFps | 0);
-    }
-
-    animate = {
-        modelIndex: {
-            targetFps: 8,
-            onceForward: () => { this.plugin.managers.animation.play(AnimateModelIndex, { duration: { name: 'computed', params: { targetFps: this.animateModelIndexTargetFps() } }, mode: { name: 'once', params: { direction: 'forward' } } }); },
-            onceBackward: () => { this.plugin.managers.animation.play(AnimateModelIndex, { duration: { name: 'computed', params: { targetFps: this.animateModelIndexTargetFps() } }, mode: { name: 'once', params: { direction: 'backward' } } }); },
-            palindrome: () => { this.plugin.managers.animation.play(AnimateModelIndex, { duration: { name: 'computed', params: { targetFps: this.animateModelIndexTargetFps() } }, mode: { name: 'palindrome', params: {} } }); },
-            loop: () => { this.plugin.managers.animation.play(AnimateModelIndex, { duration: { name: 'computed', params: { targetFps: this.animateModelIndexTargetFps() } }, mode: { name: 'loop', params: { direction: 'forward' } } }); },
-            stop: () => this.plugin.managers.animation.stop()
-        }
-    };
-
     coloring = {
-        applyStripes: async () => {
-            this.plugin.dataTransaction(async () => {
-                for (const s of this.plugin.managers.structure.hierarchy.current.structures) {
-                    await this.plugin.managers.structure.component.updateRepresentationsTheme(s.components, { color: StripedResidues.propertyProvider.descriptor.name as any });
-                }
-            });
-        },
-        applyCustomTheme: async () => {
-            this.plugin.dataTransaction(async () => {
-                for (const s of this.plugin.managers.structure.hierarchy.current.structures) {
-                    await this.plugin.managers.structure.component.updateRepresentationsTheme(s.components, { color: CustomColorThemeProvider.name as any });
-                }
-            });
-        },
         applyDefault: async () => {
-            this.plugin.dataTransaction(async () => {
+            await this.plugin.dataTransaction(async () => {
                 for (const s of this.plugin.managers.structure.hierarchy.current.structures) {
                     await this.plugin.managers.structure.component.updateRepresentationsTheme(s.components, { color: 'default' });
                 }
             });
-        },
-        applyHeatMap: async (url: string) => {
-            console.log('TEST2 ');
-            const heatMapData = new Array<HeatMapData>();
-            let minValue: number = 0, maxValue: number = 0;
-            fetch(url).then(response => {
-                if (response.ok) {
-                    response.text().then(data => {
-                        for (const line of data.split('\n')) {
-                            const columns = line.split('\t');
-                            const seq = columns[0];
-                            const vol = parseFloat(columns[1]);
-
-                            if (vol < minValue)
-                                minValue = vol;
-                            if (vol > maxValue)
-                                maxValue = vol;
-
-                            heatMapData.push({ seq, vol });
-                        }
-
-                        // @ts-ignore
-                        const overPaint: [OverPaintData] = [];
-                        for (const { seq, vol } of heatMapData) {
-                            overPaint.push({ seq, color: this.coloring.numberToColorNew(seq, vol, minValue, maxValue) });
-                        }
-                        this.coloring.applyOverPaint(overPaint, '', false, true);
-                    });
-                }
-            });
-        },
-        numberToColorNew: (seq: any, value: number, min: number, max: number) => {
-            /* const red = '#FF0000';
-            const white = '#FFFFFF';
-            const blue = '#0000FF'; */
-            const percentColors = [
-                { pct: 0.0, color: { r: 0xff, g: 0x00, b: 0x00 } },
-                { pct: 0.5, color: { r: 0xff, g: 0xff, b: 0xff } },
-                { pct: 1.0, color: { r: 0x00, g: 0x00, b: 0xff } }];
-            /* const maxMinDiff = max - min;
-            const diff = value - min;
-            const pct = diff / maxMinDiff;*/
-            const pct = ((value - min) / (max - min));
-            for (let i = 1; i < percentColors.length - 1; i++) {
-                if (pct < percentColors[i].pct) {
-                    break;
-                }
-            }
-            // let lower = percentColors[i - 1];
-            // let upper = percentColors[i];
-            const lower = percentColors[1];
-            const upper = percentColors[0];
-            const range = upper.pct - lower.pct;
-            const rangePct = (pct - lower.pct) / range;
-            const pctLower = 1 - rangePct;
-            const pctUpper = rangePct;
-            const color = {
-                r: Math.floor(lower.color.r * pctLower + upper.color.r * pctUpper),
-                g: Math.floor(lower.color.g * pctLower + upper.color.g * pctUpper),
-                b: Math.floor(lower.color.b * pctLower + upper.color.b * pctUpper)
-            };
-
-            console.log(`seq: ${seq} val: ${value} pct: ${pct} color: ${color.r} ${color.g} ${color.b}`);
-
-            return parseInt(('#' + this.coloring.componentToHex(color.r) + this.coloring.componentToHex(color.g) + this.coloring.componentToHex(color.b))
-                .replace('#', '0x'), 16);
-        },
-        numberToColor: (seq: any, i: number, min: number, max: number) => {
-            /* let ratio = i;
-            if (min > 0 || max < 1) {
-                if (i < min) {
-                    ratio = 0;
-                } else if (i > max) {
-                    ratio = 1;
-                } else {
-                    const range = max - min;
-                    ratio = (i - min) / range;
-                }
-            }*/
-            const range = max - min;
-            const ratio = (i - min) / range;
-
-            // as the function expects a value between 0 and 1, and red = 0° and green = 120°
-            // we convert the input to the appropriate hue value
-            const hue = ratio * 1.2 / 3.60;
-
-            // we convert hsl to rgb (saturation 100%, lightness 50%)
-            const rgb = this.coloring.hslToRgb(hue * 2, 1, .5);
-            // we format to css value and return
-            console.log(`seq: ${seq} hue: ${hue} number: ${i} min: ${min} max: ${max} ratio: ${ratio} rgb(${rgb[0]},${rgb[1]},${rgb[2]})`);
-            return parseInt(('#' + this.coloring.componentToHex(rgb[0]) + this.coloring.componentToHex(rgb[1]) + this.coloring.componentToHex(rgb[2]))
-                .replace('#', '0x'), 16);
-        },
-        componentToHex: (c: number) => {
-            const hex = c.toString(16);
-            return hex.length === 1 ? '0' + hex : hex;
-        },
-        hslToRgb: (h: number, s: number, l: number) => {
-            let r, g, b;
-
-            if (s === 0) {
-                r = g = b = l; // achromatic
-            } else {
-                const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-                const p = 2 * l - q;
-                r = this.coloring.hue2rgb(p, q, h + 1 / 3);
-                g = this.coloring.hue2rgb(p, q, h);
-                b = this.coloring.hue2rgb(p, q, h - 1 / 3);
-            }
-
-            return [Math.floor(r * 255), Math.floor(g * 255), Math.floor(b * 255)];
-        },
-        hue2rgb: (p: number, q: number, t: number) => {
-            if (t < 0) t += 1;
-            if (t > 1) t -= 1;
-            if (t < 1 / 6) return p + (q - p) * 6 * t;
-            if (t < 1 / 2) return q;
-            if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-            return p;
-        },
-        clearOverPaint: async (clearCanvas = false) => {
-            this.plugin.managers.interactivity.lociSelects.deselectAll();
-            if (clearCanvas) {
-                const state = this.plugin.state.data;
-                const update = state.build();
-
-                for (const s of this.plugin.managers.structure.hierarchy.current.structures) {
-                    const components = s.components;
-                    for (const c of components) {
-                        for (const r of c.representations) {
-                            update.to(r.cell.transform.ref)
-                                .apply(StateTransforms.Representation.OverpaintStructureRepresentation3DFromBundle,
-                                    Overpaint.toBundle({ layers: [] }),
-                                    { tags: 'overpaint-controls' });
-                        }
-                    }
-                }
-                await update.commit();
-            }
-
-            if (this.polymerSelector) {
-                PluginCommands.State.RemoveObject(this.plugin, { state: this.plugin.state.data, ref: this.polymerSelector.ref });
-            }
-
-            if (this.ligandSelector) {
-                PluginCommands.State.RemoveObject(this.plugin, { state: this.plugin.state.data, ref: this.ligandSelector.ref });
-            }
-        },
-        applyLigand: async (color: number) => {
-            this.plugin.dataTransaction(async () => {
-                const data = this.plugin.managers.structure.hierarchy.current.structures[0]?.cell.obj?.data;
-                if (!data) {
-                    console.log('Data not found in applyLigand seq:');
-                    return;
-                }
-
-                const state = this.plugin.state.data;
-                const update = state.build();
-
-                const StandardResidues = SetUtils.unionMany(
-                    AminoAcidNamesL, RnaBaseNames, DnaBaseNames, WaterNames
-                );
-
-                const ligand = Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
-                    'residue-test': Q.core.logic.not([Q.core.set.has([Q.set(...SetUtils.toArray(StandardResidues)), Q.ammp('label_comp_id')])]),
-                }), data);
-
-                const lociGetter = async (s: Structure) => StructureSelection.toLociWithSourceUnits(ligand);
-
-                for (const s of this.plugin.managers.structure.hierarchy.current.structures) {
-                    const components = s.components;
-                    for (const c of components) {
-                        // await this.plugin.builders.structure.representation.addRepresentation(c.cell, { type: 'spacefill', color: 'illustrative' });
-
-                        for (const r of c.representations) {
-                            const repr = r.cell;
-
-                            const structure = repr.obj!.data.sourceData;
-
-                            const loci = await lociGetter(structure.root);
-                            const layer = {
-                                bundle: StructureElement.Bundle.fromLoci(loci),
-                                color: Color(color),
-                                clear: false
-                            };
-
-                            // this.plugin.managers.interactivity.lociSelects.select({ loci }, true, Color(color), false);
-
-                            const overpaint = Overpaint.ofBundle([layer], structure.root);
-                            const merged = Overpaint.merge(overpaint);
-                            const filtered = Overpaint.filter(merged, structure);
-                            update.to(repr.transform.ref)
-                                .apply(StateTransforms.Representation.OverpaintStructureRepresentation3DFromBundle,
-                                    Overpaint.toBundle(filtered),
-                                    { tags: 'overpaint-controls' });
-                        }
-                    }
-                }
-
-                return update.commit();
-            });
-        },
-        applyOverPaint: async (sequences: [OverPaintData], ligandColor = '', paintSpikeOnly = true, isHeatMap = false) => {
-            this.plugin.dataTransaction(async () => {
-                const data = this.plugin.managers.structure.hierarchy.current.structures[0]?.cell.obj?.data;
-                if (!data) {
-                    console.log('Data not found in applyOverPaint seq:', sequences);
-                    return;
-                }
-
-                // Enable ball&stick for heatmap
-                if (isHeatMap) {
-                    if (this.components.polymer) this.polymerSelector = await this.plugin.builders.structure.representation.addRepresentation(this.components.polymer, {
-                        type: 'spacefill',
-                        color: 'illustrative'
-                    });
-                    if (this.components.ligand) this.ligandSelector = await this.plugin.builders.structure.representation.addRepresentation(this.components.ligand, {
-                        type: 'ball-and-stick',
-                        color: 'element-symbol',
-                        colorParams: { carbonColor: { name: 'element-symbol', params: {} } }
-                    });
-
-                    const props = Canvas3DPresets['occlusion'];
-                    PluginCommands.Canvas3D.SetSettings(this.plugin, {
-                        settings: {
-                            ...props,
-                            renderer: {
-                                ...this.plugin.canvas3d!.props.renderer,
-                                ...props.canvas3d.renderer
-                            },
-                            postprocessing: {
-                                ...this.plugin.canvas3d!.props.postprocessing,
-                                ...props.canvas3d.postprocessing
-                            },
-                        }
-                    });
-                }
-
-                const state = this.plugin.state.data;
-                const update = state.build();
-
-                const lociArr = [];
-                for (const sequence of sequences) {
-                    const seq = sequence.seq;
-
-                    const list: number[] = [];
-                    for (const id of seq.split(',')) {
-                        if (id.includes('-')) {
-                            const idArr = id.split('-');
-                            for (let i = parseInt(idArr[0]); i <= parseInt(idArr[1]); i++) {
-                                list.push(i);
-                            }
-                        } else {
-                            list.push(parseInt(id));
-                        }
-                    }
-
-                    const sel = paintSpikeOnly ? Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
-                        'residue-test': Q.core.set.has([Q.set(...list), Q.ammp('auth_seq_id')]),
-                        'chain-test': Q.core.rel.eq([Q.struct.atomProperty.macromolecular.chainKey(), 1]),
-                        'group-by': Q.struct.atomProperty.macromolecular.residueKey(),
-                    }), data) : Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
-                        'residue-test': Q.core.set.has([Q.set(...list), Q.ammp('auth_seq_id')]),
-                        'group-by': Q.struct.atomProperty.macromolecular.residueKey(),
-                    }), data);
-
-                    const lociGetter = async (s: Structure) => StructureSelection.toLociWithSourceUnits(sel);
-
-                    lociArr.push({ lociGetter: lociGetter, color: sequence.color });
-                }
-
-                // Add ligand coordinates and color if selected
-                if (ligandColor && ligandColor !== '') {
-                    const StandardResidues = SetUtils.unionMany(
-                        AminoAcidNamesL, RnaBaseNames, DnaBaseNames, WaterNames
-                    );
-
-                    const ligand = Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
-                        'residue-test': Q.core.logic.not([Q.core.set.has([Q.set(...SetUtils.toArray(StandardResidues)), Q.ammp('label_comp_id')])]),
-                    }), data);
-
-                    const lociGetter = async (s: Structure) => StructureSelection.toLociWithSourceUnits(ligand);
-
-                    lociArr.push({ lociGetter: lociGetter, color: parseInt(ligandColor) });
-                }
-
-                for (const s of this.plugin.managers.structure.hierarchy.current.structures) {
-                    const components = s.components;
-                    for (const c of components) {
-                        // await this.plugin.builders.structure.representation.addRepresentation(c.cell, { type: 'spacefill', color: 'illustrative' });
-
-                        for (const r of c.representations) {
-                            const repr = r.cell;
-
-                            const structure = repr.obj!.data.sourceData;
-
-                            const layers = [];
-                            for (const l of lociArr) {
-                                const lociGetter = l.lociGetter;
-                                const color = l.color;
-
-                                const loci = await lociGetter(structure.root);
-                                if (!Loci.isEmpty(loci)) {
-                                    const layer = {
-                                        bundle: StructureElement.Bundle.fromLoci(loci),
-                                        // color: Color(0),
-                                        color: Color(color),
-                                        clear: false
-                                    };
-
-                                    layers.push(layer);
-                                }
-
-                                // this.plugin.managers.interactivity.lociSelects.select({ loci }, true, Color(color), true);
-                            }
-
-                            // this.plugin.managers.structure.selection.fromLoci('add', loci, true, Color(color));
-                            // this.plugin.canvas3d?.setProps({renderer: { selectColor: Color(color) }});
-                            // this.plugin.managers.interactivity.lociSelects.select({ loci }, true, Color(color), false);
-
-                            const overpaint = Overpaint.ofBundle(layers, structure.root);
-                            const merged = Overpaint.merge(overpaint);
-                            const filtered = Overpaint.filter(merged, structure);
-                            update.to(repr.transform.ref)
-                                .apply(StateTransforms.Representation.OverpaintStructureRepresentation3DFromBundle,
-                                    Overpaint.toBundle(filtered),
-                                    { tags: 'overpaint-controls' });
-
-                            // this.plugin.managers.structure.selection.modify('add', loci);
-                            // this.plugin.managers.structure.focus.addFromLoci(loci);
-                        }
-                    }
-                }
-
-                return update.commit();
-            });
         }
     };
 
-    interactivity = {
-        highlightOn: (seq: string) => {
-            const data = this.plugin.managers.structure.hierarchy.current.structures[0]?.cell.obj?.data;
-            if (!data) {
-                console.log('Data not found1');
-                return;
-            } else {
-                console.log('Data found1');
-            }
-
-            const sel = Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
-                'residue-test': Q.core.set.has([Q.set(...[60, 87]), Q.ammp('auth_seq_id')]),
-            }), data);/*
-
-                        const sel = Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
-                            'residue-test': Q.core.rel.eq([Q.struct.atomProperty.macromolecular.label_comp_id(), seq]),
-                            'group-by': Q.struct.atomProperty.macromolecular.residueKey()
-                        }), data);*/
-            const loci = StructureSelection.toLociWithSourceUnits(sel);
-            // this.plugin.managers.interactivity.lociHighlights.highlightOnly({ loci });
-            this.plugin.managers.structure.focus.setFromLoci(loci);
-            this.plugin.managers.camera.focusLoci(loci);
-        },
-        clearHighlight: () => {
-            this.plugin.managers.interactivity.lociHighlights.highlightOnly({ loci: EmptyLoci });
-        }
-    };
-
-    tests = {
-        staticSuperposition: async () => {
-            await this.plugin.clear();
-            return buildStaticSuperposition(this.plugin, StaticSuperpositionTestData);
-        },
-        dynamicSuperposition: async () => {
-            await this.plugin.clear();
-            return dynamicSuperpositionTest(this.plugin, ['1tqn', '2hhb', '4hhb'], 'HEM');
-        },
-        toggleValidationTooltip: () => {
-            return this.plugin.state.updateBehavior(PDBeStructureQualityReport, params => { params.showTooltip = !params.showTooltip; });
-        },
-        showToasts: () => {
-            PluginCommands.Toast.Show(this.plugin, {
-                title: 'Toast 1',
-                message: 'This is an example text, timeout 3s',
-                key: 'toast-1',
-                timeoutMs: 3000
-            });
-            PluginCommands.Toast.Show(this.plugin, {
-                title: 'Toast 2',
-                message: CustomToastMessage,
-                key: 'toast-2'
-            });
-        },
-        hideToasts: () => {
-            PluginCommands.Toast.Hide(this.plugin, { key: 'toast-1' });
-            PluginCommands.Toast.Hide(this.plugin, { key: 'toast-2' });
-        }
-    };
+    handleResize() {
+        this.plugin.layout.events.updated.next(void 0);
+    }
 }
+
+export interface LoadStructureOptions {
+    representationParams?: StructureRepresentationPresetProvider.CommonParams
+}
+
+export interface VolumeIsovalueInfo {
+    type: 'absolute' | 'relative',
+    value: number,
+    color: Color,
+    alpha?: number,
+    volumeIndex?: number
+}
+
+export interface LoadTrajectoryParams {
+    model: { kind: 'model-url', url: string, format?: BuiltInTrajectoryFormat /* mmcif */, isBinary?: boolean }
+    | { kind: 'model-data', data: string | number[] | ArrayBuffer | Uint8Array, format?: BuiltInTrajectoryFormat /* mmcif */ }
+    | { kind: 'topology-url', url: string, format: BuiltInTopologyFormat, isBinary?: boolean }
+    | { kind: 'topology-data', data: string | number[] | ArrayBuffer | Uint8Array, format: BuiltInTopologyFormat },
+    modelLabel?: string,
+    coordinates: { kind: 'coordinates-url', url: string, format: BuiltInCoordinatesFormat, isBinary?: boolean }
+    | { kind: 'coordinates-data', data: string | number[] | ArrayBuffer | Uint8Array, format: BuiltInCoordinatesFormat },
+    coordinatesLabel?: string,
+    preset?: keyof PresetTrajectoryHierarchy
+}
+
+export const ViewerAutoPreset = StructureRepresentationPresetProvider({
+    id: 'preset-structure-representation-viewer-auto',
+    display: {
+        name: 'Automatic (w/ Annotation)', group: 'Annotation',
+        description: 'Show standard automatic representation but colored by quality assessment (if available in the model).'
+    },
+    isApplicable(a) {
+        return (
+            !!a.data.models.some(m => QualityAssessment.isApplicable(m, 'pLDDT')) ||
+            !!a.data.models.some(m => QualityAssessment.isApplicable(m, 'qmean'))
+        );
+    },
+    params: () => StructureRepresentationPresetProvider.CommonParams,
+    async apply(ref, params, plugin) {
+        const structureCell = StateObjectRef.resolveAndCheck(plugin.state.data, ref);
+        const structure = structureCell?.obj?.data;
+        if (!structureCell || !structure) return {};
+
+        if (!!structure.models.some(m => QualityAssessment.isApplicable(m, 'pLDDT'))) {
+            return await QualityAssessmentPLDDTPreset.apply(ref, params, plugin);
+        } else if (!!structure.models.some(m => QualityAssessment.isApplicable(m, 'qmean'))) {
+            return await QualityAssessmentQmeanPreset.apply(ref, params, plugin);
+        } else {
+            return await PresetStructureRepresentations.auto.apply(ref, params, plugin);
+        }
+    }
+});
 
 (window as any).BVBRCMolStarWrapper = new BVBRCMolStarWrapper();

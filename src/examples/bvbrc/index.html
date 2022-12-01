@@ -10,177 +10,117 @@
             padding: 0;
             box-sizing: border-box;
         }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        hr {
+            margin: 10px;
+        }
+        h1, h2, h3, h4, h5 {
+            margin-top: 5px;
+            margin-bottom: 3px;
+        }
+        button {
+            padding: 2px;
+        }
         #app {
+            width: 75%;
+            left: 425px;
+            top: 0px;
             position: absolute;
-            left: 160px;
-            top: 100px;
-            width: 600px;
-            height: 600px;
-            border: 1px solid #ccc;
+            padding: 0px;
+            height: 100%;
         }
-
         #controls {
-            position: absolute;
-            width: 130px;
-            top: 10px;
-            left: 10px;
-        }
-
-        #controls > button {
-            display: block;
-            width: 100%;
-            text-align: left;
-        }
-
-        #controls > hr {
-            margin: 5px 0;
-        }
-
-        #controls > input, #controls > select {
-            width: 100%;
-            display: block;
-        }
-
-        .msp-plugin-content.msp-layout-expanded {
-            margin-left: 150px;
+            width: 25%;
+            left: 0;
+            top: 0px;
+            height: 100%;
         }
     </style>
     <link rel="stylesheet" type="text/css" href="molstar.css" />
     <script type="text/javascript" src="./index.js"></script>
-    <style>
-        .msp-plugin .msp-layout-expanded {
-            position: fixed !important;
-        }
-    </style>
 </head>
 <body>
-<div id='controls'>
-    <!--<h3>Source</h3>
-    <input type='text' id='url' placeholder='url' />
-    <input type='text' id='assemblyId' placeholder='assembly id' />
-    <select id='format'>
-        <option value='mmcif' selected>mmCIF</option>
-        <option value='pdb'>PDB</option>
-    </select>-->
-</div>
+<div id="controls"></div>
 <div id="app"></div>
-<script>
-    function getParam(name, regex) {
-        let r = new RegExp(name + '=' + '(' + regex + ')[&]?', 'i');
-        return decodeURIComponent(((window.location.search || '').match(r) || [])[1] || '');
-    }
-    function $(id) { return document.getElementById(id); }
+<script type="text/javascript">
+    BVBRCMolStarWrapper.init('app').then(() => {
+        let format = 'mmcif';
+        const pdbId = getParam('pdb', '[^&]+').trim();
+        const path = getParam('path', '[^&]+').trim();
+        const selection = getParam('selection', '[^&]+').trim();
+        const isRcsb = getParam('isRcsb', '[^&]+').trim();
 
-    var pdbId = getParam('pdb', '[^&]+').trim();
-    var path = getParam('path', '[^&]+').trim();
-    var selection = getParam('selection', '[^&]+').trim();
-    var isRcsb = getParam('isRcsb', '[^&]+').trim();
-    var assemblyId= '1';
-    var format = 'mmcif';
+        let url;
+        if (pdbId) {
+            url = !isRcsb ? 'https://www.ebi.ac.uk/pdbe/static/entry/' + pdbId.toLowerCase() + '_updated.cif' : 'https://files.rcsb.org/download/' + pdbId + '-sf.cif';
+        } else if (path) {
+            url = path;
+            format = 'pdb';
+        }
 
-    /*$('assemblyId').value = assemblyId;
-    $('assemblyId').onchange = function (e) { assemblyId = e.target.value; }
-    $('format').value = format;
-    $('format').onchange = function (e) { format = e.target.value; }*/
-
-    let url;
-    if (pdbId) {
-        url = !isRcsb ? 'https://www.ebi.ac.uk/pdbe/static/entry/' + pdbId.toLowerCase() + '_updated.cif' : 'https://files.rcsb.org/download/' + pdbId + '-sf.cif';
-    } else if (path) {
-        url = path;
-        format = 'pdb';
-    }
-
-    if (url) {
-        BVBRCMolStarWrapper.init('app' /** or document.getElementById('app') */).then(() => {
-            BVBRCMolStarWrapper.setBackground(0xffffff);
-            BVBRCMolStarWrapper.load({url, format, selection, displaySpikeSequence: true});
-        });
-    }
+        if (url) BVBRCMolStarWrapper.load({url, format, selection, displaySpikeSequence: true});
+    });
 
     addControl('Apply HeatMap', () => BVBRCMolStarWrapper.coloring.applyHeatMap('/build/examples/bvbrc/pdb1jsd.ent.r4s'));
+    addNewLine();
     addControl('Clear HeatMap', () => BVBRCMolStarWrapper.coloring.clearOverPaint(true));
-
-    /*addControl('Load Asym Unit', () => BVBRCMolStarWrapper.load({ url: url, format: format }));
-    addControl('Load Assembly', () => BVBRCMolStarWrapper.load({ url: url, format: format, assemblyId: assemblyId }));
-
     addSeparator();
 
-    addHeader('Camera');
-    addControl('Toggle Spin', () => BVBRCMolStarWrapper.toggleSpin());
-
-    addSeparator();
-
-    addHeader('Animation');
-
-    // adjust this number to make the animation faster or slower
-    // requires to "restart" the animation if changed
-    BVBRCMolStarWrapper.animate.modelIndex.targetFps = 30;
-
-    addControl('Play To End', () => BVBRCMolStarWrapper.animate.modelIndex.onceForward());
-    addControl('Play To Start', () => BVBRCMolStarWrapper.animate.modelIndex.onceBackward());
-    addControl('Play Palindrome', () => BVBRCMolStarWrapper.animate.modelIndex.palindrome());
-    addControl('Play Loop', () => BVBRCMolStarWrapper.animate.modelIndex.loop());
-    addControl('Stop', () => BVBRCMolStarWrapper.animate.modelIndex.stop());
-
-    addHeader('Misc');
-
-    addControl('Apply Stripes', () => BVBRCMolStarWrapper.coloring.applyStripes());
-    addControl('Apply Custom Theme', () => BVBRCMolStarWrapper.coloring.applyCustomTheme());
-    addControl('Default Coloring', () => BVBRCMolStarWrapper.coloring.applyDefault());
-
-    addHeader('Interactivity');
-    addControl('Highlight seq_id=7', () => BVBRCMolStarWrapper.interactivity.highlightOn('DLE'));
-    addControl('Clear Highlight', () => BVBRCMolStarWrapper.interactivity.clearHighlight());
-
-    addHeader('Tests');
-
-    addControl('Static Superposition', () => BVBRCMolStarWrapper.tests.staticSuperposition());
-    addControl('Dynamic Superposition', () => BVBRCMolStarWrapper.tests.dynamicSuperposition());
-    addControl('Validation Tooltip', () => BVBRCMolStarWrapper.tests.toggleValidationTooltip());
-
-    addControl('Show Toasts', () => BVBRCMolStarWrapper.tests.showToasts());
-    addControl('Hide Toasts', () => BVBRCMolStarWrapper.tests.hideToasts());*/
-
+    addSelect('overPaintColor', BVBRCMolStarWrapper.defaultColors);
+    addNewLine();
     addControl('Apply OverPaint', () => BVBRCMolStarWrapper.coloring.applyOverPaint(
         document.getElementById("feature").value,
         document.getElementById("overPaintColor").value)
     );
+    addSeparator();
 
-    addSelect('overPaintColor', BVBRCMolStarWrapper.defaultColors);
-
+    addSelect('ligandColor', BVBRCMolStarWrapper.defaultColors);
+    addNewLine();
     addControl('Apply Ligand', () => BVBRCMolStarWrapper.coloring.applyLigand(
         document.getElementById("ligandColor").value)
     );
-
-    addSelect('ligandColor', BVBRCMolStarWrapper.defaultColors);
+    addSeparator();
 
     addControl('Clear OverPaint', () => BVBRCMolStarWrapper.coloring.clearOverPaint(true));
 
-    ////////////////////////////////////////////////////////
+    function getParam(name, regex) {
+        var r = new RegExp(name + '=' + '(' + regex + ')[&]?', 'i');
+        return decodeURIComponent(((window.location.search || '').match(r) || [])[1] || '');
+    }
 
     function addControl(label, action) {
-        var btn = document.createElement('button');
+        const btn = document.createElement('button');
         btn.onclick = action;
         btn.innerText = label;
-        $('controls').appendChild(btn);
+        btn.style.marginBottom = "5px";
+        document.getElementById('controls').appendChild(btn);
+    }
+
+    function addNewLine() {
+        const br = document.createElement('br');
+        document.getElementById('controls').appendChild(br);
     }
 
     function addSeparator() {
-        var hr = document.createElement('hr');
-        $('controls').appendChild(hr);
+        const hr = document.createElement('hr');
+        document.getElementById('controls').appendChild(hr);
     }
 
     function addHeader(header) {
-        var h = document.createElement('h3');
+        const h = document.createElement('h3');
         h.innerText = header;
-        $('controls').appendChild(h);
+        document.getElementById('controls').appendChild(h);
     }
 
     function addSelect(id, options) {
         let selectElement = document.createElement("select");
         selectElement.id = id;
-        $('controls').appendChild(selectElement);
+        selectElement.style.marginBottom = "5px";
+        document.getElementById('controls').appendChild(selectElement);
 
         for (const option of options) {
             let optionElement = document.createElement('option');

@@ -35,6 +35,14 @@ import { Backgrounds } from '../../extensions/backgrounds';
 import { Canvas3DProps } from '../../mol-canvas3d/canvas3d';
 import { DefaultColorSwatch } from '../../mol-util/color/swatches';
 import { featureDataString } from './sars2-features';
+import { SetUtils } from '../../mol-util/set';
+import { AminoAcidNamesL, DnaBaseNames, RnaBaseNames, WaterNames } from '../../mol-model/structure/model/types';
+import { Script } from '../../mol-script/script';
+import { Structure } from '../../mol-model/structure/structure/structure';
+import { StructureSelection } from '../../mol-model/structure/query/selection';
+import { StructureElement } from '../../mol-model/structure/structure/element';
+import { Overpaint } from '../../mol-theme/overpaint';
+import { StateTransforms } from '../../mol-plugin-state/transforms';
 
 export { PLUGIN_VERSION as version } from '../../mol-plugin/version';
 export { setDebugMode, setProductionMode, setTimingMode } from '../../mol-util/debug';
@@ -285,6 +293,58 @@ class BVBRCMolStarWrapper {
                 for (const s of this.plugin.managers.structure.hierarchy.current.structures) {
                     await this.plugin.managers.structure.component.updateRepresentationsTheme(s.components, { color: 'default' });
                 }
+            });
+        },
+        applyLigand: async (color: number) => {
+            await this.plugin.dataTransaction(async () => {
+                const data = this.plugin.managers.structure.hierarchy.current.structures[0]?.cell.obj?.data;
+                if (!data) {
+                    console.log('Data not found in applyLigand seq:');
+                    return;
+                }
+
+                const state = this.plugin.state.data;
+                const update = state.build();
+
+                const StandardResidues = SetUtils.unionMany(
+                    AminoAcidNamesL, RnaBaseNames, DnaBaseNames, WaterNames
+                );
+
+                const ligand = Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
+                    'residue-test': Q.core.logic.not([Q.core.set.has([Q.set(...SetUtils.toArray(StandardResidues)), Q.ammp('label_comp_id')])]),
+                }), data);
+
+                const lociGetter = async (s: Structure) => StructureSelection.toLociWithSourceUnits(ligand);
+
+                for (const s of this.plugin.managers.structure.hierarchy.current.structures) {
+                    const components = s.components;
+                    for (const c of components) {
+                        // await this.plugin.builders.structure.representation.addRepresentation(c.cell, { type: 'spacefill', color: 'illustrative' });
+
+                        for (const r of c.representations) {
+                            const repr = r.cell;
+
+                            const structure = repr.obj!.data.sourceData;
+
+                            const loci = await lociGetter(structure.root);
+                            const layer = {
+                                bundle: StructureElement.Bundle.fromLoci(loci),
+                                color: Color(color),
+                                clear: false
+                            };
+
+                            const overpaint = Overpaint.ofBundle([layer], structure.root);
+                            const merged = Overpaint.merge(overpaint);
+                            const filtered = Overpaint.filter(merged, structure);
+                            update.to(repr.transform.ref)
+                                .apply(StateTransforms.Representation.OverpaintStructureRepresentation3DFromBundle,
+                                    Overpaint.toBundle(filtered),
+                                    { tags: 'overpaint-controls' });
+                        }
+                    }
+                }
+
+                return update.commit();
             });
         }
     };

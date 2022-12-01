@@ -75,9 +75,12 @@
     addNewLine();
     addSelect('overPaintColor', BVBRCMolStarWrapper.defaultColors);
     addNewLine();
-    addControl('Apply OverPaint', () => BVBRCMolStarWrapper.coloring.applyOverPaint(
-        document.getElementById("feature").value,
-        document.getElementById("overPaintColor").value)
+    addControl('Apply OverPaint', () =>
+        BVBRCMolStarWrapper.coloring.applyOverPaint(
+            [{ seq: document.getElementById("feature").value,
+                color: document.getElementById("overPaintColor").value}],
+            document.getElementById("ligandColor").value)
+
     );
     addSeparator();
 

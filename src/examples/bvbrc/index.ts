@@ -43,11 +43,13 @@ import { StructureSelection } from '../../mol-model/structure/query/selection';
 import { StructureElement } from '../../mol-model/structure/structure/element';
 import { Overpaint } from '../../mol-theme/overpaint';
 import { StateTransforms } from '../../mol-plugin-state/transforms';
+import { Loci } from '../../mol-model/loci';
 
 export { PLUGIN_VERSION as version } from '../../mol-plugin/version';
 export { setDebugMode, setProductionMode, setTimingMode } from '../../mol-util/debug';
 
 type LoadParams = { url: string, format?: BuiltInTrajectoryFormat, isBinary?: boolean, assemblyId?: string, selection?: string, displaySpikeSequence?: boolean, label?: string }
+type OverPaintData = { seq: string, color: number };
 type _Preset = Pick<Canvas3DProps, 'postprocessing' | 'renderer'>
 type Preset = { [K in keyof _Preset]: Partial<_Preset[K]> }
 
@@ -296,7 +298,7 @@ class BVBRCMolStarWrapper {
             });
         },
         applyLigand: async (color: number) => {
-            await this.plugin.dataTransaction(async () => {
+            this.plugin.dataTransaction(async () => {
                 const data = this.plugin.managers.structure.hierarchy.current.structures[0]?.cell.obj?.data;
                 if (!data) {
                     console.log('Data not found in applyLigand seq:');
@@ -340,6 +342,103 @@ class BVBRCMolStarWrapper {
                                 .apply(StateTransforms.Representation.OverpaintStructureRepresentation3DFromBundle,
                                     Overpaint.toBundle(filtered),
                                     { tags: 'overpaint-controls' });
+                        }
+                    }
+                }
+
+                return update.commit();
+            });
+        },
+        applyOverPaint: async (sequences: [OverPaintData], ligandColor = '', paintSpikeOnly = true) => {
+            this.plugin.dataTransaction(async () => {
+                const data = this.plugin.managers.structure.hierarchy.current.structures[0]?.cell.obj?.data;
+                if (!data) {
+                    console.log('Data not found in applyOverPaint seq:', sequences);
+                    return;
+                }
+
+                const state = this.plugin.state.data;
+                const update = state.build();
+
+                const lociArr = [];
+                for (const sequence of sequences) {
+                    const seq = sequence.seq;
+
+                    const list: number[] = [];
+                    for (const id of seq.split(',')) {
+                        if (id.includes('-')) {
+                            const idArr = id.split('-');
+                            for (let i = parseInt(idArr[0]); i <= parseInt(idArr[1]); i++) {
+                                list.push(i);
+                            }
+                        } else {
+                            list.push(parseInt(id));
+                        }
+                    }
+
+                    const sel = paintSpikeOnly ? Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
+                        'residue-test': Q.core.set.has([Q.set(...list), Q.ammp('auth_seq_id')]),
+                        'chain-test': Q.core.rel.eq([Q.struct.atomProperty.macromolecular.chainKey(), 1]),
+                        'group-by': Q.struct.atomProperty.macromolecular.residueKey(),
+                    }), data) : Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
+                        'residue-test': Q.core.set.has([Q.set(...list), Q.ammp('auth_seq_id')]),
+                        'group-by': Q.struct.atomProperty.macromolecular.residueKey(),
+                    }), data);
+
+                    const lociGetter = async (s: Structure) => StructureSelection.toLociWithSourceUnits(sel);
+
+                    lociArr.push({ lociGetter: lociGetter, color: sequence.color });
+                }
+
+                // Add ligand coordinates and color if selected
+                if (ligandColor && ligandColor !== '') {
+                    const StandardResidues = SetUtils.unionMany(
+                        AminoAcidNamesL, RnaBaseNames, DnaBaseNames, WaterNames
+                    );
+
+                    const ligand = Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
+                        'residue-test': Q.core.logic.not([Q.core.set.has([Q.set(...SetUtils.toArray(StandardResidues)), Q.ammp('label_comp_id')])]),
+                    }), data);
+
+                    const lociGetter = async (s: Structure) => StructureSelection.toLociWithSourceUnits(ligand);
+
+                    lociArr.push({ lociGetter: lociGetter, color: parseInt(ligandColor) });
+                }
+
+                for (const s of this.plugin.managers.structure.hierarchy.current.structures) {
+                    const components = s.components;
+                    for (const c of components) {
+                        for (const r of c.representations) {
+                            const repr = r.cell;
+
+                            const structure = repr.obj!.data.sourceData;
+
+                            const layers = [];
+                            for (const l of lociArr) {
+                                const lociGetter = l.lociGetter;
+                                const color = l.color;
+
+                                const loci = await lociGetter(structure.root);
+                                if (!Loci.isEmpty(loci)) {
+                                    const layer = {
+                                        bundle: StructureElement.Bundle.fromLoci(loci),
+                                        // color: Color(0),
+                                        color: Color(color),
+                                        clear: false
+                                    };
+
+                                    layers.push(layer);
+                                }
+                            }
+
+                            const overpaint = Overpaint.ofBundle(layers, structure.root);
+                            const merged = Overpaint.merge(overpaint);
+                            const filtered = Overpaint.filter(merged, structure);
+                            update.to(repr.transform.ref)
+                                .apply(StateTransforms.Representation.OverpaintStructureRepresentation3DFromBundle,
+                                    Overpaint.toBundle(filtered),
+                                    { tags: 'overpaint-controls' });
+
                         }
                     }
                 }

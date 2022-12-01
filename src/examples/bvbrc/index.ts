@@ -445,6 +445,26 @@ class BVBRCMolStarWrapper {
 
                 return update.commit();
             });
+        },
+        clearOverPaint: async (clearCanvas = false) => {
+            this.plugin.managers.interactivity.lociSelects.deselectAll();
+            if (clearCanvas) {
+                const state = this.plugin.state.data;
+                const update = state.build();
+
+                for (const s of this.plugin.managers.structure.hierarchy.current.structures) {
+                    const components = s.components;
+                    for (const c of components) {
+                        for (const r of c.representations) {
+                            update.to(r.cell.transform.ref)
+                                .apply(StateTransforms.Representation.OverpaintStructureRepresentation3DFromBundle,
+                                    Overpaint.toBundle({ layers: [] }),
+                                    { tags: 'overpaint-controls' });
+                        }
+                    }
+                }
+                await update.commit();
+            }
         }
     };
 

@@ -38,6 +38,7 @@
             left: 0;
             top: 0px;
             height: 100%;
+            padding: 5px;
         }
     </style>
     <link rel="stylesheet" type="text/css" href="molstar.css" />
@@ -47,13 +48,13 @@
 <div id="controls"></div>
 <div id="app"></div>
 <script type="text/javascript">
-    BVBRCMolStarWrapper.init('app').then(() => {
-        let format = 'mmcif';
-        const pdbId = getParam('pdb', '[^&]+').trim();
-        const path = getParam('path', '[^&]+').trim();
-        const selection = getParam('selection', '[^&]+').trim();
-        const isRcsb = getParam('isRcsb', '[^&]+').trim();
+    let format = 'mmcif';
+    const pdbId = getParam('pdb', '[^&]+').trim();
+    const path = getParam('path', '[^&]+').trim();
+    const selection = getParam('selection', '[^&]+').trim();
+    const isRcsb = getParam('isRcsb', '[^&]+').trim();
 
+    BVBRCMolStarWrapper.init('app').then(() => {
         let url;
         if (pdbId) {
             url = !isRcsb ? 'https://www.ebi.ac.uk/pdbe/static/entry/' + pdbId.toLowerCase() + '_updated.cif' : 'https://files.rcsb.org/download/' + pdbId + '-sf.cif';
@@ -70,6 +71,8 @@
     addControl('Clear HeatMap', () => BVBRCMolStarWrapper.coloring.clearOverPaint(true));
     addSeparator();
 
+    addFeatureSelect('feature', BVBRCMolStarWrapper.featureData);
+    addNewLine();
     addSelect('overPaintColor', BVBRCMolStarWrapper.defaultColors);
     addNewLine();
     addControl('Apply OverPaint', () => BVBRCMolStarWrapper.coloring.applyOverPaint(
@@ -127,6 +130,23 @@
             optionElement.innerHTML = option[0];
             optionElement.value = option[1];
             selectElement.appendChild(optionElement);
+        }
+    }
+
+    function addFeatureSelect(id, map) {
+        let selectElement = document.createElement("select");
+        selectElement.id = id;
+        selectElement.style.marginBottom = "5px";
+        document.getElementById('controls').appendChild(selectElement);
+
+        const options = map[pdbId]
+        if (options) {
+            for (const option of options) {
+                let optionElement = document.createElement('option');
+                optionElement.innerHTML = option.name;
+                optionElement.value = option.coords;
+                selectElement.appendChild(optionElement);
+            }
         }
     }
 </script>

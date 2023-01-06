@@ -40,7 +40,9 @@ import { VolumeValueColorThemeProvider } from './color/volume-value';
 import { Vec3, Vec4 } from '../mol-math/linear-algebra';
 import { ModelIndexColorThemeProvider } from './color/model-index';
 import { StructureIndexColorThemeProvider } from './color/structure-index';
+import { VolumeSegmentColorThemeProvider } from './color/volume-segment';
 import { ExternalVolumeColorThemeProvider } from './color/external-volume';
+import { ColorThemeCategory } from './color/categories';
 
 export type LocationColor = (location: Location, isSecondary: boolean) => Color
 
@@ -86,14 +88,7 @@ type ColorTheme<P extends PD.Params, G extends ColorType = ColorTypeLocation> =
             G extends ColorTypeDirect ? ColorThemeDirect<P> : never
 
 namespace ColorTheme {
-    export const enum Category {
-        Atom = 'Atom Property',
-        Chain = 'Chain Property',
-        Residue = 'Residue Property',
-        Symmetry = 'Symmetry',
-        Validation = 'Validation',
-        Misc = 'Miscellaneous',
-    }
+    export const Category = ColorThemeCategory;
 
     export interface Palette {
         filter?: TextureFilter,
@@ -152,6 +147,7 @@ namespace ColorTheme {
         'uncertainty': UncertaintyColorThemeProvider,
         'unit-index': UnitIndexColorThemeProvider,
         'uniform': UniformColorThemeProvider,
+        'volume-segment': VolumeSegmentColorThemeProvider,
         'volume-value': VolumeValueColorThemeProvider,
         'external-volume': ExternalVolumeColorThemeProvider,
     };

@@ -6,8 +6,50 @@ Note that since we don't clearly distinguish between a public and private interf
 
 ## [Unreleased]
 
+- `meshes` extension: Fixed a bug in mesh visualization (show backfaces when opacity < 1)
+- Add color quick select control to Volume controls
+- Fix `dropFiles` bug
+- Fix some cyclic imports and reduce the use of const enums. This should make it easier to use the library with the `isolatedModules: true` TS config.
+- Fix `dropFiles` bug (#679)
+- Add `input type='color'` picker to `CombinedColorControl`
+- Set `ParameterMappingControl` disabled when state is updating
+- Performance tweaks
+    - Update clip `defines` only when changed
+    - Check for identity in structure/unit areEqual methods
+    - Avoid cloning of structure representation parameters
+- Add StructureElement.Loci.forEachLocation
+
+## [v3.28.0] - 2022-12-20
+
+- Show histogram in direct volume control point settings
+- Add `solidInterior` parameter to sphere/cylinder impostors
+- [Breaking] Tweak `ignoreHydrogens` non-polar handling (introduced in 3.27.0)
+- Add `meshes` and `volumes-and-segmentations` extensions
+    - See https://molstarvolseg.ncbr.muni.cz/ for more info
+- Fix missing support for info in `ParamDefinition.Converted`
+- Add support for multi-visual volume representations
+- Improve volume isosurface bounding-sphere
+- Add basic volume segmentation support to core
+    - Add `Volume.Segment` model
+    - Add `Segmentation` custom volume property
+    - Add `SegmentRepresentation` representation
+    - Add `volume-segment` color theme
+- Fix GPU marching cubes failing for large meshes with webgl2 (due to use of float16)
+
+## [v3.27.0] - 2022-12-15
+
+- Add an `includeTransparent` parameter to hide/show outlines of components that are transparent
 - Fix 'once' for animations of systems with many frames
 - Better guard against issue (black fringes) with bumpiness in impostors
+- Improve impostor shaders
+    - Fix sphere near-clipping with orthographic projection
+    - Fix cylinder near-clipping
+    - Add interior cylinder caps
+    - Add per-pixel object clipping
+- Fix `QualityAssessment` assignment bug for structures with different auth vs label sequence numbering
+- Refresh `ApplyActionControl`'s param definition when toggling expanded state
+- Fix `struct_conn` bond assignment for ions
+- Ability to show only polar hydrogens
 
 ## [v3.26.0] - 2022-12-04
 

@@ -19,7 +19,7 @@ import { VisualContext } from '../../../../mol-repr/visual';
 import { Theme } from '../../../../mol-theme/theme';
 import { Spheres } from '../../../../mol-geo/geometry/spheres/spheres';
 import { SpheresBuilder } from '../../../../mol-geo/geometry/spheres/spheres-builder';
-import { isTrace, isH, StructureGroup } from './common';
+import { isTrace, StructureGroup, isHydrogen } from './common';
 import { Sphere3D } from '../../../../mol-math/geometry';
 
 // avoiding namespace lookup improved performance in Chrome (Aug 2020)
@@ -27,6 +27,7 @@ const v3add = Vec3.add;
 
 type ElementProps = {
     ignoreHydrogens: boolean,
+    ignoreHydrogensVariant: 'all' | 'non-polar',
     traceOnly: boolean,
 }
 
@@ -36,9 +37,8 @@ export type ElementSphereMeshProps = {
 } & ElementProps
 
 export function makeElementIgnoreTest(structure: Structure, unit: Unit, props: ElementProps): undefined | ((i: ElementIndex) => boolean) {
-    const { ignoreHydrogens, traceOnly } = props;
+    const { ignoreHydrogens, ignoreHydrogensVariant, traceOnly } = props;
 
-    const { atomicNumber } = unit.model.atomicHierarchy.derived.atom;
     const isCoarse = Unit.isCoarse(unit);
 
     const { child } = structure;
@@ -50,7 +50,7 @@ export function makeElementIgnoreTest(structure: Structure, unit: Unit, props: E
     return (element: ElementIndex) => {
         return (
             (!!childUnit && !SortedArray.has(childUnit.elements, element)) ||
-            (!isCoarse && ignoreHydrogens && isH(atomicNumber, element)) ||
+            (!isCoarse && ignoreHydrogens && isHydrogen(structure, unit, element, ignoreHydrogensVariant)) ||
             (traceOnly && !isTrace(unit, element))
         );
     };

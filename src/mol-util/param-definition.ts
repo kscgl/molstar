@@ -216,10 +216,13 @@ export namespace ParamDefinition {
     }
 
     export interface LineGraph extends Base<Vec2Data[]> {
-        type: 'line-graph'
+        type: 'line-graph',
+        getVolume?: () => unknown
     }
-    export function LineGraph(defaultValue: Vec2Data[], info?: Info): LineGraph {
-        return setInfo<LineGraph>({ type: 'line-graph', defaultValue }, info);
+    export function LineGraph(defaultValue: Vec2Data[], info?: Info & { getVolume?: (binCount?: number) => unknown }): LineGraph {
+        const ret = setInfo<LineGraph>({ type: 'line-graph', defaultValue }, info);
+        if (info?.getVolume) ret.getVolume = info.getVolume;
+        return ret;
     }
 
     export interface Group<T> extends Base<T> {
@@ -314,7 +317,7 @@ export namespace ParamDefinition {
         toValue(v: C): T
     }
     export function Converted<T, C extends Any>(fromValue: (v: T) => C['defaultValue'], toValue: (v: C['defaultValue']) => T, converted: C): Converted<T, C['defaultValue']> {
-        return { type: 'converted', defaultValue: toValue(converted.defaultValue), converted, fromValue, toValue };
+        return setInfo({ type: 'converted', defaultValue: toValue(converted.defaultValue), converted, fromValue, toValue }, converted);
     }
 
     export interface Conditioned<T, P extends Base<T>, C = { [k: string]: P }> extends Base<T> {

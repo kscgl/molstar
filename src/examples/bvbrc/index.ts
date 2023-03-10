@@ -61,8 +61,9 @@ const Canvas3DPresets = {
     illustrative: {
         canvas3d: <Preset>{
             postprocessing: {
-                occlusion: { name: 'on', params: { samples: 32, radius: 6, bias: 1.4, blurKernelSize: 15, resolutionScale: 1 } },
-                /* outline: { name: 'on', params: { scale: 1, threshold: 0.33, color: Color(0x000000) } }*/
+                occlusion: { name: 'on', params: { samples: 32, radius: 6, bias: 1.4, blurKernelSize: 15, resolutionScale: 1, color: Color(0x000000) } },
+                outline: { name: 'on', params: { scale: 1, threshold: 0.33, color: Color(0x000000), includeTransparent: true, } },
+                shadow: { name: 'off', params: {} },
             },
             renderer: {
                 ambientIntensity: 1.0,
@@ -335,9 +336,7 @@ class BVBRCMolStarWrapper {
                                 clear: false
                             };
 
-                            const overpaint = Overpaint.ofBundle([layer], structure.root);
-                            const merged = Overpaint.merge(overpaint);
-                            const filtered = Overpaint.filter(merged, structure);
+                            const filtered = this.getFilteredBundle([layer], structure);
                             update.to(repr.transform.ref)
                                 .apply(StateTransforms.Representation.OverpaintStructureRepresentation3DFromBundle,
                                     Overpaint.toBundle(filtered),
@@ -431,9 +430,7 @@ class BVBRCMolStarWrapper {
                                 }
                             }
 
-                            const overpaint = Overpaint.ofBundle(layers, structure.root);
-                            const merged = Overpaint.merge(overpaint);
-                            const filtered = Overpaint.filter(merged, structure);
+                            const filtered = this.getFilteredBundle(layers, structure);
                             update.to(repr.transform.ref)
                                 .apply(StateTransforms.Representation.OverpaintStructureRepresentation3DFromBundle,
                                     Overpaint.toBundle(filtered),
@@ -456,9 +453,13 @@ class BVBRCMolStarWrapper {
                     const components = s.components;
                     for (const c of components) {
                         for (const r of c.representations) {
-                            update.to(r.cell.transform.ref)
+                            const repr = r.cell;
+
+                            const structure = repr.obj!.data.sourceData;
+                            const filtered = this.getFilteredBundle([], structure);
+                            update.to(repr.transform.ref)
                                 .apply(StateTransforms.Representation.OverpaintStructureRepresentation3DFromBundle,
-                                    Overpaint.toBundle({ layers: [] }),
+                                    Overpaint.toBundle(filtered),
                                     { tags: 'overpaint-controls' });
                         }
                     }
@@ -467,6 +468,13 @@ class BVBRCMolStarWrapper {
             }
         }
     };
+
+    /** filter overpaint layers for given structure */
+    getFilteredBundle(layers: Overpaint.BundleLayer[], structure: Structure) {
+        const overpaint = Overpaint.ofBundle(layers, structure.root);
+        const merged = Overpaint.merge(overpaint);
+        return Overpaint.filter(merged, structure) as Overpaint<StructureElement.Loci>;
+    }
 
     handleResize() {
         this.plugin.layout.events.updated.next(void 0);

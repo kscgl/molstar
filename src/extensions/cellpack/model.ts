@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2019-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2019-2023 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  * @author Ludovic Autin <ludovic.autin@gmail.com>
@@ -236,7 +236,7 @@ async function getIngredientStructure(plugin: PluginContext, ingredient: Ingredi
         structure = await getCurve(name, getCurveTransforms(ingredient), model);
     } else {
         if ((!results || results.length === 0)) return;
-        let bu: string|undefined = source.bu ? source.bu : undefined;
+        let bu: string | undefined = source.bu ? source.bu : undefined;
         if (bu) {
             if (bu === 'AU') {
                 bu = undefined;
@@ -604,6 +604,7 @@ export const LoadCellPackModel = StateAction.build({
                         bias: 1,
                         blurKernelSize: 15,
                         resolutionScale: 1,
+                        color: Color(0x000000),
                     }
                 },
                 shadow: {

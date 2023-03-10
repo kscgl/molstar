@@ -6,6 +6,60 @@ Note that since we don't clearly distinguish between a public and private interf
 
 ## [Unreleased]
 
+- Add occlusion color parameter
+- Fix issue with outlines and orthographic camera
+- Reduce over-blurring occlusion at larger view distances
+- Fix occlusion artefact with non-canvas viewport and pixel-ratio > 1
+- Update nodejs-shims conditionals to handle polyfilled document object in NodeJS environment.
+
+## [v3.31.4] - 2023-02-24
+
+- Allow link cylinder/line `dashCount` set to '0'
+- Stop animation loop when disposing `PluginContext` (thanks @gfrn for identifying the issue)
+
+## [v3.31.3] - 2023-02-22
+
+- Fix impostor bond visuals not correctly updating on `sizeFactor` changes
+- Fix degenerate case in PCA
+- Fix near clipping avoidance in impostor shaders
+- Update `fs` import in `data-source.ts`
+
+## [v3.31.2] - 2023-02-12
+
+- Fix exit code of volume pack executable (pack.ts). Now exits with non-0 status when an error happens
+- Remove pca transform from components ui focus (too distracting)
+- Fix artefacts with opaque outlines behind transparent objects
+- Fix polymer trace visual not updating
+- Fix use of `WEBGL_provoking_vertex`
+
+## [v3.31.1] - 2023-02-05
+
+- Improve Component camera focus based on the PCA of the structure and the following rules:
+    - The first residue should be in first quadrant if there is only one chain
+    - The average position of the residues of the first chain should be in the first quadrant if there is more than one chain
+- Add `HeadlessPluginContext` and `HeadlessScreenshotHelper` to be used in Node.js
+- Add example `image-renderer`
+- Fix wrong offset when rendering text with orthographic projection
+- Update camera/handle helper when `devicePixelRatio` changes
+- Add various options to customize the axes camera-helper
+- Fix issue with texture-mesh color smoothing when changing themes
+- Add fast boundary helper and corresponding unit trait
+- Add Observable for Canvas3D commits
+
+## [v3.30.0] - 2023-01-29
+
+- Improve `Dnatco` extension
+    - Factor out common code in `Dnatco` extension
+    - Add `NtC tube` visual. Applicable for structures with NtC annotation
+    - [Breaking] Rename `DnatcoConfalPyramids` to `DnatcoNtCs`
+- Improve boundary calculation performance
+- Add option to create & include images in state snapshots
+- Fix SSAO artefacts with high bias values
+- Fix SSAO resolution scale parameter handling
+- Improve outlines, visually more stable at different view distances
+
+## [v3.29.0] - 2023-01-15
+
 - `meshes` extension: Fixed a bug in mesh visualization (show backfaces when opacity < 1)
 - Add color quick select control to Volume controls
 - Fix `dropFiles` bug
@@ -17,7 +71,16 @@ Note that since we don't clearly distinguish between a public and private interf
     - Update clip `defines` only when changed
     - Check for identity in structure/unit areEqual methods
     - Avoid cloning of structure representation parameters
+    - Make SymmetryOperator.createMapping monomorphic
+    - Improve bonding-sphere calculation
+    - Defer Scene properties calculation (markerAverage, opacityAverage, hasOpaque)
+    - Improve checks in in UnitsRepresentation setVisualState
 - Add StructureElement.Loci.forEachLocation
+- Add RepresentationRegistry.clear and ThemeRegistry.clear
+- Add generic Loci support for overpaint, substance, clipping themes
+- Add `.getCenter` and `.center` to `Camera`
+- Add support to dim unmarked groups
+- Add support for marker edge strength
 
 ## [v3.28.0] - 2022-12-20
 

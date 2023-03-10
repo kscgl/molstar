@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2023 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author David Sehnal <david.sehnal@gmail.com>
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
@@ -119,11 +119,11 @@ class Camera implements ICamera {
         return Camera.targetDistance(radius, this.state.fov, this.viewport.width, this.viewport.height);
     }
 
-    getFocus(target: Vec3, radius: number, up?: Vec3, dir?: Vec3): Partial<Camera.Snapshot> {
+    getFocus(target: Vec3, radius: number, up?: Vec3, dir?: Vec3, snapshot?: Partial<Camera.Snapshot>): Partial<Camera.Snapshot> {
         const r = Math.max(radius, 0.01);
         const targetDistance = this.getTargetDistance(r);
 
-        Vec3.sub(this.deltaDirection, this.target, this.position);
+        Vec3.sub(this.deltaDirection, snapshot?.target ?? this.target, snapshot?.position ?? this.position);
         if (dir) Vec3.matchDirection(this.deltaDirection, dir, this.deltaDirection);
         Vec3.setMagnitude(this.deltaDirection, this.deltaDirection, targetDistance);
         Vec3.sub(this.newPosition, target, this.deltaDirection);
@@ -133,6 +133,18 @@ class Camera implements ICamera {
         state.radius = r;
         state.position = Vec3.clone(this.newPosition);
         if (up) Vec3.matchDirection(state.up, up, state.up);
+
+        return state;
+    }
+
+    getCenter(target: Vec3, radius?: number): Partial<Camera.Snapshot> {
+        Vec3.sub(this.deltaDirection, this.target, this.position);
+        Vec3.sub(this.newPosition, target, this.deltaDirection);
+
+        const state = Camera.copySnapshot(Camera.createDefaultSnapshot(), this.state);
+        state.target = Vec3.clone(target);
+        state.position = Vec3.clone(this.newPosition);
+        if (radius) state.radius = Math.max(radius, 0.01);
 
         return state;
     }
@@ -158,6 +170,10 @@ class Camera implements ICamera {
         if (radius > 0) {
             this.setState(this.getFocus(target, radius, up, dir), durationMs);
         }
+    }
+
+    center(target: Vec3, durationMs?: number) {
+        this.setState(this.getCenter(target), durationMs);
     }
 
     /** Transform point into 2D window coordinates. */

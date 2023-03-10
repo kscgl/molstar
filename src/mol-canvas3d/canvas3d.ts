@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2023 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  * @author David Sehnal <david.sehnal@gmail.com>
@@ -31,7 +31,7 @@ import { PickData } from './passes/pick';
 import { PickHelper } from './passes/pick';
 import { ImagePass, ImageProps } from './passes/image';
 import { Sphere3D } from '../mol-math/geometry';
-import { isDebugMode, isTimingMode } from '../mol-util/debug';
+import { addConsoleStatsProvider, isDebugMode, isTimingMode, removeConsoleStatsProvider } from '../mol-util/debug';
 import { CameraHelperParams } from './helper/camera-helper';
 import { produce } from 'immer';
 import { HandleHelperParams } from './helper/handle-helper';
@@ -65,7 +65,7 @@ export const Canvas3DParams = {
     cameraClipping: PD.Group({
         radius: PD.Numeric(100, { min: 0, max: 99, step: 1 }, { label: 'Clipping', description: 'How much of the scene to show.' }),
         far: PD.Boolean(true, { description: 'Hide scene in the distance' }),
-        minNear: PD.Numeric(5, { min: 0.1, max: 10, step: 0.1 }, { description: 'Note, may cause performance issues rendering impostors when set too small and cause issues with outline rendering when too close to 0.' }),
+        minNear: PD.Numeric(5, { min: 0.1, max: 100, step: 0.1 }, { description: 'Note, may cause performance issues rendering impostors when set too small and cause issues with outline rendering when too close to 0.' }),
     }, { pivot: 'radius' }),
     viewport: PD.MappedStatic('canvas', {
         canvas: PD.Group({}),
@@ -260,6 +260,7 @@ interface Canvas3D {
     notifyDidDraw: boolean,
     readonly didDraw: BehaviorSubject<now.Timestamp>
     readonly commited: BehaviorSubject<now.Timestamp>
+    readonly commitQueueSize: BehaviorSubject<number>
     readonly reprCount: BehaviorSubject<number>
     readonly resized: BehaviorSubject<any>
 
@@ -306,6 +307,7 @@ namespace Canvas3D {
         let startTime = now();
         const didDraw = new BehaviorSubject<now.Timestamp>(0 as now.Timestamp);
         const commited = new BehaviorSubject<now.Timestamp>(0 as now.Timestamp);
+        const commitQueueSize = new BehaviorSubject<number>(0);
 
         const { gl, contextRestored } = webgl;
 
@@ -440,7 +442,7 @@ namespace Canvas3D {
                     cam = stereoCamera;
                 }
 
-                if (isTimingMode) webgl.timer.mark('Canvas3D.render');
+                if (isTimingMode) webgl.timer.mark('Canvas3D.render', true);
                 const ctx = { renderer, camera: cam, scene, helper };
                 if (MultiSamplePass.isEnabled(p.multiSample)) {
                     const forceOn = !cameraChanged && markingUpdated && !controls.isAnimating;
@@ -593,7 +595,11 @@ namespace Canvas3D {
             // snapshot the current bounding sphere of visible objects
             Sphere3D.copy(oldBoundingSphereVisible, scene.boundingSphereVisible);
 
-            if (!scene.commit(isSynchronous ? void 0 : sceneCommitTimeoutMs)) return false;
+            if (!scene.commit(isSynchronous ? void 0 : sceneCommitTimeoutMs)) {
+                commitQueueSize.next(scene.commitQueueSize);
+                return false;
+            }
+            commitQueueSize.next(0);
 
             if (helper.debug.isEnabled) helper.debug.update();
             if (!p.camera.manualReset && (reprCount.value === 0 || shouldResetCamera())) {
@@ -623,6 +629,8 @@ namespace Canvas3D {
                 attribute: `${(attribute / 1024 / 1024).toFixed(3)} MiB`,
                 elements: `${(elements / 1024 / 1024).toFixed(3)} MiB`,
             });
+
+            console.log(webgl.timer.formatedStats());
         }
 
         function add(repr: Representation.Any) {
@@ -728,6 +736,8 @@ namespace Canvas3D {
             resized.next(+new Date());
         }
 
+        addConsoleStatsProvider(consoleStats);
+
         return {
             webgl,
 
@@ -790,6 +800,7 @@ namespace Canvas3D {
             set notifyDidDraw(v: boolean) { notifyDidDraw = v; },
             didDraw,
             commited,
+            commitQueueSize,
             reprCount,
             resized,
             setProps: (properties, doNotRequestDraw = false) => {
@@ -897,6 +908,7 @@ namespace Canvas3D {
             },
             dispose: () => {
                 contextRestoredSub.unsubscribe();
+                cancelAnimationFrame(animationFrameHandle);
 
                 markBuffer = [];
 
@@ -905,6 +917,8 @@ namespace Canvas3D {
                 controls.dispose();
                 renderer.dispose();
                 interactionHelper.dispose();
+
+                removeConsoleStatsProvider(consoleStats);
             }
         };
 

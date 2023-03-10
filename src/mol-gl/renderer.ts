@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018-2022 mol* contributors, licensed under MIT, See LICENSE file for more info.
+ * Copyright (c) 2018-2023 mol* contributors, licensed under MIT, See LICENSE file for more info.
  *
  * @author Alexander Rose <alexander.rose@weirdbyte.de>
  * @author Gianluca Tomasello <giagitom@gmail.com>
@@ -58,7 +58,7 @@ interface Renderer {
 
     clear: (toBackgroundColor: boolean, ignoreTransparentBackground?: boolean) => void
     clearDepth: (packed?: boolean) => void
-    update: (camera: ICamera) => void
+    update: (camera: ICamera, scene: Scene) => void
 
     renderPick: (group: Scene.Group, camera: ICamera, variant: 'pick' | 'depth', depthTexture: Texture | null, pickType: PickType) => void
     renderDepth: (group: Scene.Group, camera: ICamera, depthTexture: Texture | null) => void
@@ -97,8 +97,10 @@ export const RendererParams = {
     colorMarker: PD.Boolean(true, { description: 'Enable color marker' }),
     highlightColor: PD.Color(Color.fromNormalizedRgb(1.0, 0.4, 0.6)),
     selectColor: PD.Color(Color.fromNormalizedRgb(0.2, 1.0, 0.1)),
+    dimColor: PD.Color(Color.fromNormalizedRgb(1.0, 1.0, 1.0)),
     highlightStrength: PD.Numeric(0.3, { min: 0.0, max: 1.0, step: 0.1 }),
     selectStrength: PD.Numeric(0.3, { min: 0.0, max: 1.0, step: 0.1 }),
+    dimStrength: PD.Numeric(0.0, { min: 0.0, max: 1.0, step: 0.1 }),
     markerPriority: PD.Select(1, [[1, 'Highlight'], [2, 'Select']]),
 
     xrayEdgeFalloff: PD.Numeric(1, { min: 0.0, max: 3.0, step: 0.1 }),
@@ -107,7 +109,7 @@ export const RendererParams = {
         inclination: PD.Numeric(150, { min: 0, max: 180, step: 1 }),
         azimuth: PD.Numeric(320, { min: 0, max: 360, step: 1 }),
         color: PD.Color(Color.fromNormalizedRgb(1.0, 1.0, 1.0)),
-        intensity: PD.Numeric(0.6, { min: 0.0, max: 1.0, step: 0.01 }),
+        intensity: PD.Numeric(0.6, { min: 0.0, max: 5.0, step: 0.01 }),
     }, o => Color.toHexString(o.color), { defaultValue: [{
         inclination: 150,
         azimuth: 320,
@@ -115,7 +117,7 @@ export const RendererParams = {
         intensity: 0.6
     }] }),
     ambientColor: PD.Color(Color.fromNormalizedRgb(1.0, 1.0, 1.0)),
-    ambientIntensity: PD.Numeric(0.4, { min: 0.0, max: 1.0, step: 0.01 }),
+    ambientIntensity: PD.Numeric(0.4, { min: 0.0, max: 2.0, step: 0.01 }),
 };
 export type RendererProps = PD.Values<typeof RendererParams>
 
@@ -232,9 +234,12 @@ namespace Renderer {
 
             uHighlightColor: ValueCell.create(Color.toVec3Normalized(Vec3(), p.highlightColor)),
             uSelectColor: ValueCell.create(Color.toVec3Normalized(Vec3(), p.selectColor)),
+            uDimColor: ValueCell.create(Color.toVec3Normalized(Vec3(), p.dimColor)),
             uHighlightStrength: ValueCell.create(p.highlightStrength),
             uSelectStrength: ValueCell.create(p.selectStrength),
+            uDimStrength: ValueCell.create(p.dimStrength),
             uMarkerPriority: ValueCell.create(p.markerPriority),
+            uMarkerAverage: ValueCell.create(0),
 
             uXrayEdgeFalloff: ValueCell.create(p.xrayEdgeFalloff),
         };
@@ -329,7 +334,7 @@ namespace Renderer {
             r.render(variant, sharedTexturesList.length);
         };
 
-        const update = (camera: ICamera) => {
+        const update = (camera: ICamera, scene: Scene) => {
             ValueCell.update(globalUniforms.uView, camera.view);
             ValueCell.update(globalUniforms.uInvView, Mat4.invert(invView, camera.view));
             ValueCell.update(globalUniforms.uProjection, camera.projection);
@@ -346,13 +351,15 @@ namespace Renderer {
             ValueCell.updateIfChanged(globalUniforms.uFogFar, camera.fogFar);
             ValueCell.updateIfChanged(globalUniforms.uFogNear, camera.fogNear);
             ValueCell.updateIfChanged(globalUniforms.uTransparentBackground, transparentBackground);
+
+            ValueCell.updateIfChanged(globalUniforms.uMarkerAverage, scene.markerAverage);
         };
 
         const updateInternal = (group: Scene.Group, camera: ICamera, depthTexture: Texture | null, renderMask: Mask, markingDepthTest: boolean) => {
             arrayMapUpsert(sharedTexturesList, 'tDepth', depthTexture || emptyDepthTexture);
 
             ValueCell.update(globalUniforms.uModel, group.view);
-            ValueCell.update(globalUniforms.uModelView, Mat4.mul(modelView, group.view, camera.view));
+            ValueCell.update(globalUniforms.uModelView, Mat4.mul(modelView, camera.view, group.view));
             ValueCell.update(globalUniforms.uInvModelView, Mat4.invert(invModelView, modelView));
             ValueCell.update(globalUniforms.uModelViewProjection, Mat4.mul(modelViewProjection, modelView, camera.projection));
             ValueCell.update(globalUniforms.uInvModelViewProjection, Mat4.invert(invModelViewProjection, modelViewProjection));
@@ -755,6 +762,10 @@ namespace Renderer {
                     p.selectColor = props.selectColor;
                     ValueCell.update(globalUniforms.uSelectColor, Color.toVec3Normalized(globalUniforms.uSelectColor.ref.value, p.selectColor));
                 }
+                if (props.dimColor !== undefined && props.dimColor !== p.dimColor) {
+                    p.dimColor = props.dimColor;
+                    ValueCell.update(globalUniforms.uDimColor, Color.toVec3Normalized(globalUniforms.uDimColor.ref.value, p.dimColor));
+                }
                 if (props.highlightStrength !== undefined && props.highlightStrength !== p.highlightStrength) {
                     p.highlightStrength = props.highlightStrength;
                     ValueCell.update(globalUniforms.uHighlightStrength, p.highlightStrength);
@@ -762,6 +773,10 @@ namespace Renderer {
                 if (props.selectStrength !== undefined && props.selectStrength !== p.selectStrength) {
                     p.selectStrength = props.selectStrength;
                     ValueCell.update(globalUniforms.uSelectStrength, p.selectStrength);
+                }
+                if (props.dimStrength !== undefined && props.dimStrength !== p.dimStrength) {
+                    p.dimStrength = props.dimStrength;
+                    ValueCell.update(globalUniforms.uDimStrength, p.dimStrength);
                 }
                 if (props.markerPriority !== undefined && props.markerPriority !== p.markerPriority) {
                     p.markerPriority = props.markerPriority;

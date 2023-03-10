@@ -1,6 +1,6 @@
 import { ANVILMembraneOrientation } from '../../extensions/anvil/behavior';
 import { CellPack } from '../../extensions/cellpack';
-import { DnatcoConfalPyramids } from '../../extensions/dnatco';
+import { DnatcoNtCs } from '../../extensions/dnatco';
 import { G3DFormat, G3dProvider } from '../../extensions/g3d/format';
 import { GeometryExport } from '../../extensions/geo-export';
 import { MAQualityAssessment } from '../../extensions/model-archive/quality-assessment/behavior';
@@ -101,7 +101,7 @@ const Canvas3DPresets = {
 const Extensions = {
     'backgrounds': PluginSpec.Behavior(Backgrounds),
     'cellpack': PluginSpec.Behavior(CellPack),
-    'dnatco-confal-pyramids': PluginSpec.Behavior(DnatcoConfalPyramids),
+    'dnatco-ntcs': PluginSpec.Behavior(DnatcoNtCs),
     'pdbe-structure-quality-report': PluginSpec.Behavior(PDBeStructureQualityReport),
     'rcsb-assembly-symmetry': PluginSpec.Behavior(RCSBAssemblySymmetry),
     'rcsb-validation-report': PluginSpec.Behavior(RCSBValidationReport),

@@ -3,15 +3,18 @@ import { CellPack } from '../../extensions/cellpack';
 import { DnatcoNtCs } from '../../extensions/dnatco';
 import { G3DFormat, G3dProvider } from '../../extensions/g3d/format';
 import { GeometryExport } from '../../extensions/geo-export';
-import { MAQualityAssessment } from '../../extensions/model-archive/quality-assessment/behavior';
-import { QualityAssessmentPLDDTPreset, QualityAssessmentQmeanPreset } from '../../extensions/model-archive/quality-assessment/behavior';
+import {
+    MAQualityAssessment,
+    QualityAssessmentPLDDTPreset,
+    QualityAssessmentQmeanPreset
+} from '../../extensions/model-archive/quality-assessment/behavior';
 import { QualityAssessment } from '../../extensions/model-archive/quality-assessment/prop';
 import { ModelExport } from '../../extensions/model-export';
 import { Mp4Export } from '../../extensions/mp4-export';
 import { PDBeStructureQualityReport } from '../../extensions/pdbe';
 import { RCSBAssemblySymmetry, RCSBValidationReport } from '../../extensions/rcsb';
 import { ZenodoImport } from '../../extensions/zenodo';
-import { DownloadStructure } from '../../mol-plugin-state/actions/structure';
+import { DownloadStructure, PdbDownloadProvider } from '../../mol-plugin-state/actions/structure';
 import { PresetTrajectoryHierarchy } from '../../mol-plugin-state/builder/structure/hierarchy-preset';
 import { PresetStructureRepresentations, StructureRepresentationPresetProvider } from '../../mol-plugin-state/builder/structure/representation-preset';
 import { DataFormatProvider } from '../../mol-plugin-state/formats/provider';
@@ -48,8 +51,9 @@ import { Loci } from '../../mol-model/loci';
 export { PLUGIN_VERSION as version } from '../../mol-plugin/version';
 export { setDebugMode, setProductionMode, setTimingMode } from '../../mol-util/debug';
 
-type LoadParams = { url: string, format?: BuiltInTrajectoryFormat, isBinary?: boolean, assemblyId?: string, selection?: string, displaySpikeSequence?: boolean, label?: string }
-type OverPaintData = { seq: string, color: number };
+type LoadSelection = {value: string, source: string, format?: BuiltInTrajectoryFormat}
+type LoadParams = { selections: LoadSelection[], isBinary?: boolean, assemblyId?: string, selection?: string, displaySpikeSequence?: boolean, label?: string }
+type OverPaintData = { index: number, seq: string, color: number };
 type _Preset = Pick<Canvas3DProps, 'postprocessing' | 'renderer'>
 type Preset = { [K in keyof _Preset]: Partial<_Preset[K]> }
 
@@ -58,19 +62,6 @@ const CustomFormats = [
 ];
 
 const Canvas3DPresets = {
-    illustrative: {
-        canvas3d: <Preset>{
-            postprocessing: {
-                occlusion: { name: 'on', params: { samples: 32, radius: 6, bias: 1.4, blurKernelSize: 15, resolutionScale: 1, color: Color(0x000000) } },
-                outline: { name: 'on', params: { scale: 1, threshold: 0.33, color: Color(0x000000), includeTransparent: true, } },
-                shadow: { name: 'off', params: {} },
-            },
-            renderer: {
-                ambientIntensity: 1.0,
-                light: []
-            }
-        }
-    },
     occlusion: {
         canvas3d: <Preset>{
             postprocessing: {
@@ -84,19 +75,6 @@ const Canvas3DPresets = {
             }
         }
     },
-    standard: {
-        canvas3d: <Preset>{
-            postprocessing: {
-                occlusion: { name: 'off', params: {} },
-                outline: { name: 'off', params: {} }
-            },
-            renderer: {
-                ambientIntensity: 0.4,
-                light: [{ inclination: 180, azimuth: 0, color: Color.fromNormalizedRgb(1.0, 1.0, 1.0),
-                    intensity: 0.6 }]
-            }
-        }
-    }
 };
 
 const Extensions = {
@@ -240,20 +218,62 @@ class BVBRCMolStarWrapper {
         });
     }
 
-    async load({ url, format = 'mmcif', isBinary = false, displaySpikeSequence = false, label }: LoadParams) {
+    async load({ selections, isBinary = false, displaySpikeSequence = false, label }: LoadParams) {
         const params = DownloadStructure.createDefaultParams(this.plugin.state.data.root.obj!, this.plugin);
-        await this.plugin.runTask(this.plugin.state.data.applyAction(DownloadStructure, {
-            source: {
-                name: 'url',
-                params: {
-                    url: Asset.Url(url),
-                    format: format as any,
-                    isBinary,
-                    label: label,
-                    options: { ...params.source.params.options },
-                }
+
+        const pdbProvider = this.plugin.config.get(PluginConfig.Download.DefaultPdbProvider)!;
+        const source = { name: '', params: {} };
+        for (let index = 0; index < selections.length; ++index) {
+            const selection = selections[index];
+            const sourceName = selection.source;
+            const value = selection.value;
+            const format = selection.format || 'mmcif';
+            // Create source map
+            switch (sourceName) {
+                case 'pdb':
+                    source.name = 'pdb' as const;
+                    source.params = {
+                        provider: {
+                            id: value,
+                            server: {
+                                name: pdbProvider,
+                                params: PdbDownloadProvider[pdbProvider].defaultValue as any
+                            }
+                        },
+                        options: { ...params.source.params.options },
+                    };
+                    break;
+                case 'alphafold':
+                    source.name = 'alphafolddb' as const;
+                    source.params = {
+                        id: value,
+                        options: {
+                            ...params.source.params.options,
+                            representation: 'preset-structure-representation-ma-quality-assessment-plddt'
+                        },
+                    };
+                    break;
+                case 'url':
+                default:
+                    source.name = 'url';
+                    source.params = {
+                        url: Asset.Url(value),
+                        format: format as any,
+                        isBinary,
+                        label: label,
+                        options: { ...params.source.params.options },
+                    };
+                    break;
             }
-        }));
+
+            await this.plugin.runTask(this.plugin.state.data.applyAction(DownloadStructure, {
+                source
+            }));
+
+            if (sourceName !== 'alphafold') {
+                await this.coloring.applyDefault(index);
+            }
+        }
 
         const props = Canvas3DPresets['occlusion'];
         await PluginCommands.Canvas3D.SetSettings(this.plugin, {
@@ -269,8 +289,6 @@ class BVBRCMolStarWrapper {
                 },
             }
         });
-
-        await this.coloring.applyDefault();
 
         if (displaySpikeSequence) {
             const selectElements = document.getElementsByTagName('select');
@@ -291,11 +309,10 @@ class BVBRCMolStarWrapper {
     }
 
     coloring = {
-        applyDefault: async () => {
+        applyDefault: async (index: number) => {
             await this.plugin.dataTransaction(async () => {
-                for (const s of this.plugin.managers.structure.hierarchy.current.structures) {
-                    await this.plugin.managers.structure.component.updateRepresentationsTheme(s.components, { color: 'default' });
-                }
+                const components = this.plugin.managers.structure.hierarchy.current.structures[index].components;
+                await this.plugin.managers.structure.component.updateRepresentationsTheme(components, { color: 'default' });
             });
         },
         applyLigand: async (color: number) => {
@@ -350,21 +367,14 @@ class BVBRCMolStarWrapper {
         },
         applyOverPaint: async (sequences: [OverPaintData], ligandColor = '', paintSpikeOnly = true) => {
             this.plugin.dataTransaction(async () => {
-                const data = this.plugin.managers.structure.hierarchy.current.structures[0]?.cell.obj?.data;
-                if (!data) {
-                    console.log('Data not found in applyOverPaint seq:', sequences);
-                    return;
-                }
-
                 const state = this.plugin.state.data;
                 const update = state.build();
 
-                const lociArr = [];
-                for (const sequence of sequences) {
-                    const seq = sequence.seq;
-
+                // Create coordinates&color value for given indexes
+                const dataMap: {[id: number]: [{coordinates: number[], color: number}]} = sequences.reduce((map, sequence) => {
+                    const data = map[sequence.index] || [];
                     const list: number[] = [];
-                    for (const id of seq.split(',')) {
+                    for (const id of sequence.seq.split(',')) {
                         if (id.includes('-')) {
                             const idArr = id.split('-');
                             for (let i = parseInt(idArr[0]); i <= parseInt(idArr[1]); i++) {
@@ -374,39 +384,57 @@ class BVBRCMolStarWrapper {
                             list.push(parseInt(id));
                         }
                     }
+                    data.push({ coordinates: list, color: sequence.color });
+                    map[sequence.index] = data;
 
-                    const sel = paintSpikeOnly ? Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
-                        'residue-test': Q.core.set.has([Q.set(...list), Q.ammp('auth_seq_id')]),
-                        'chain-test': Q.core.rel.eq([Q.struct.atomProperty.macromolecular.chainKey(), 1]),
-                        'group-by': Q.struct.atomProperty.macromolecular.residueKey(),
-                    }), data) : Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
-                        'residue-test': Q.core.set.has([Q.set(...list), Q.ammp('auth_seq_id')]),
-                        'group-by': Q.struct.atomProperty.macromolecular.residueKey(),
-                    }), data);
+                    return map;
+                }, {});
 
-                    const lociGetter = async (s: Structure) => StructureSelection.toLociWithSourceUnits(sel);
+                let index = 0;
+                for (const structure of this.plugin.managers.structure.hierarchy.current.structures) {
+                    const data = structure?.cell.obj?.data;
+                    if (!data) {
+                        console.log('Data not found in applyOverPaint seq:', sequences);
+                        return;
+                    }
 
-                    lociArr.push({ lociGetter: lociGetter, color: sequence.color });
-                }
+                    const lociArr = [];
 
-                // Add ligand coordinates and color if selected
-                if (ligandColor && ligandColor !== '') {
-                    const StandardResidues = SetUtils.unionMany(
-                        AminoAcidNamesL, RnaBaseNames, DnaBaseNames, WaterNames
-                    );
+                    // Check if coordinates provided for this structure
+                    if (dataMap && dataMap.hasOwnProperty(index)) {
+                        const userSelection = dataMap[index];
+                        for (const selection of userSelection) {
+                            const sel = paintSpikeOnly ? Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
+                                'residue-test': Q.core.set.has([Q.set(...selection.coordinates), Q.ammp('auth_seq_id')]),
+                                'chain-test': Q.core.rel.eq([Q.struct.atomProperty.macromolecular.chainKey(), 1]),
+                                'group-by': Q.struct.atomProperty.macromolecular.residueKey(),
+                            }), data) : Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
+                                'residue-test': Q.core.set.has([Q.set(...selection.coordinates), Q.ammp('auth_seq_id')]),
+                                'group-by': Q.struct.atomProperty.macromolecular.residueKey(),
+                            }), data);
 
-                    const ligand = Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
-                        'residue-test': Q.core.logic.not([Q.core.set.has([Q.set(...SetUtils.toArray(StandardResidues)), Q.ammp('label_comp_id')])]),
-                    }), data);
+                            const lociGetter = async (s: Structure) => StructureSelection.toLociWithSourceUnits(sel);
 
-                    const lociGetter = async (s: Structure) => StructureSelection.toLociWithSourceUnits(ligand);
+                            lociArr.push({ lociGetter: lociGetter, color: selection.color });
+                        }
+                    }
 
-                    lociArr.push({ lociGetter: lociGetter, color: parseInt(ligandColor) });
-                }
+                    // Add ligand coordinates and color if selected
+                    if (ligandColor && ligandColor !== '') {
+                        const StandardResidues = SetUtils.unionMany(
+                            AminoAcidNamesL, RnaBaseNames, DnaBaseNames, WaterNames
+                        );
 
-                for (const s of this.plugin.managers.structure.hierarchy.current.structures) {
-                    const components = s.components;
-                    for (const c of components) {
+                        const ligand = Script.getStructureSelection(Q => Q.struct.generator.atomGroups({
+                            'residue-test': Q.core.logic.not([Q.core.set.has([Q.set(...SetUtils.toArray(StandardResidues)), Q.ammp('label_comp_id')])]),
+                        }), data);
+
+                        const lociGetter = async (s: Structure) => StructureSelection.toLociWithSourceUnits(ligand);
+
+                        lociArr.push({ lociGetter: lociGetter, color: parseInt(ligandColor) });
+                    }
+
+                    for (const c of structure.components) {
                         for (const r of c.representations) {
                             const repr = r.cell;
 
@@ -438,6 +466,7 @@ class BVBRCMolStarWrapper {
 
                         }
                     }
+                    index += 1;
                 }
 
                 return update.commit();

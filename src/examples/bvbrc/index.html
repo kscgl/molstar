@@ -49,21 +49,33 @@
 <div id="app"></div>
 <script type="text/javascript">
     let format = 'mmcif';
-    const pdbId = getParam('pdb', '[^&]+').trim();
-    const path = getParam('path', '[^&]+').trim();
+    let sourceName = 'pdb';
+    const pdbIds = getParam('pdb', '[^&]+').trim();
+    const paths = getParam('path', '[^&]+').trim();
+    const alphafolds = getParam('alphafolds', '[^&]+').trim();
     const selection = getParam('selection', '[^&]+').trim();
     const isRcsb = getParam('isRcsb', '[^&]+').trim();
 
     BVBRCMolStarWrapper.init('app').then(() => {
-        let url;
-        if (pdbId) {
-            url = !isRcsb ? 'https://www.ebi.ac.uk/pdbe/static/entry/' + pdbId.toLowerCase() + '_updated.cif' : 'https://files.rcsb.org/download/' + pdbId + '-sf.cif';
-        } else if (path) {
-            url = path;
-            format = 'pdb';
+        let selections = [];
+        if (pdbIds) {
+            for (let pdbId of pdbIds.split(",")) {
+                selections.push({value: pdbId, source: 'pdb'})
+            }
+            /*for (let pdbId of pdbIds.split(",")) {
+                urls.push(!isRcsb ? 'https://www.ebi.ac.uk/pdbe/static/entry/' + pdbId.toLowerCase() + '_updated.cif' : 'https://files.rcsb.org/download/' + pdbId + '-sf.cif');
+            }*/
+        } else if (paths) {
+            for (let path of paths.split(",")) {
+                selections.push({value: path, source: 'url', format: 'gzip'})
+            }
+        } else if (alphafolds) {
+            for (let pdbId of alphafolds.split(",")) {
+                selections.push({value: pdbId, source: 'alphafold'})
+            }
         }
 
-        if (url) BVBRCMolStarWrapper.load({url, format, selection, displaySpikeSequence: true});
+        if (selections.length > 0) BVBRCMolStarWrapper.load({selections, selection, displaySpikeSequence: true});
     });
 
     addControl('Apply HeatMap', () => BVBRCMolStarWrapper.coloring.applyHeatMap('/build/examples/bvbrc/pdb1jsd.ent.r4s'));
@@ -71,13 +83,15 @@
     addControl('Clear HeatMap', () => BVBRCMolStarWrapper.coloring.clearOverPaint(true));
     addSeparator();
 
-    addFeatureSelect('feature', BVBRCMolStarWrapper.featureData);
-    addNewLine();
+    if (pdbIds && pdbIds.length > 0) {
+        addFeatureSelect('feature', BVBRCMolStarWrapper.featureData);
+        addNewLine();
+    }
     addSelect('overPaintColor', BVBRCMolStarWrapper.defaultColors);
     addNewLine();
     addControl('Apply OverPaint', () =>
         BVBRCMolStarWrapper.coloring.applyOverPaint(
-            [{ seq: document.getElementById("feature").value,
+            [{ seq: document.getElementById("feature").value, index: 1,
                 color: document.getElementById("overPaintColor").value}],
             document.getElementById("ligandColor").value)
 
@@ -142,7 +156,7 @@
         selectElement.style.marginBottom = "5px";
         document.getElementById('controls').appendChild(selectElement);
 
-        const options = map[pdbId]
+        const options = map[pdbIds.split(",")[0]]
         if (options) {
             for (const option of options) {
                 let optionElement = document.createElement('option');

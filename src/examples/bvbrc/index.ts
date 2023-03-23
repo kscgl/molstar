@@ -47,12 +47,13 @@ import { StructureElement } from '../../mol-model/structure/structure/element';
 import { Overpaint } from '../../mol-theme/overpaint';
 import { StateTransforms } from '../../mol-plugin-state/transforms';
 import { Loci } from '../../mol-model/loci';
+import { ParamDefinition } from '../../mol-util/param-definition';
 
 export { PLUGIN_VERSION as version } from '../../mol-plugin/version';
 export { setDebugMode, setProductionMode, setTimingMode } from '../../mol-util/debug';
 
-type LoadSelection = {value: string, source: string, format?: BuiltInTrajectoryFormat}
-type LoadParams = { selections: LoadSelection[], isBinary?: boolean, assemblyId?: string, selection?: string, displaySpikeSequence?: boolean, label?: string }
+type LoadSelection = {value: string, source: string, format?: BuiltInTrajectoryFormat, label?: string}
+type LoadParams = { selections: LoadSelection[], isBinary?: boolean, assemblyId?: string, selection?: string, displaySpikeSequence?: boolean }
 type OverPaintData = { index: number, seq: string, color: number };
 type _Preset = Pick<Canvas3DProps, 'postprocessing' | 'renderer'>
 type Preset = { [K in keyof _Preset]: Partial<_Preset[K]> }
@@ -218,16 +219,17 @@ class BVBRCMolStarWrapper {
         });
     }
 
-    async load({ selections, isBinary = false, displaySpikeSequence = false, label }: LoadParams) {
+    async load({ selections, isBinary = false, displaySpikeSequence = false }: LoadParams) {
         const params = DownloadStructure.createDefaultParams(this.plugin.state.data.root.obj!, this.plugin);
 
         const pdbProvider = this.plugin.config.get(PluginConfig.Download.DefaultPdbProvider)!;
-        const source = { name: '', params: {} };
+        const source: ParamDefinition.NamedParams<any, 'pdb' | 'alphafolddb' | 'url'> = { name: 'pdb', params: {} };
         for (let index = 0; index < selections.length; ++index) {
             const selection = selections[index];
             const sourceName = selection.source;
             const value = selection.value;
             const format = selection.format || 'mmcif';
+            const label = selection.label;
             // Create source map
             switch (sourceName) {
                 case 'pdb':
@@ -371,7 +373,8 @@ class BVBRCMolStarWrapper {
                 const update = state.build();
 
                 // Create coordinates&color value for given indexes
-                const dataMap: {[id: number]: [{coordinates: number[], color: number}]} = sequences.reduce((map, sequence) => {
+                type DataMapType = {[id: number]: [{coordinates: number[], color: number}]};
+                const dataMap: DataMapType = sequences.reduce((map: DataMapType, sequence) => {
                     const data = map[sequence.index] || [];
                     const list: number[] = [];
                     for (const id of sequence.seq.split(',')) {

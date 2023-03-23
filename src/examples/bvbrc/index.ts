@@ -272,9 +272,9 @@ class BVBRCMolStarWrapper {
                 source
             }));
 
-            if (sourceName !== 'alphafold') {
+            /* if (sourceName !== 'alphafold') {
                 await this.coloring.applyDefault(index);
-            }
+            } */
         }
 
         const props = Canvas3DPresets['occlusion'];
